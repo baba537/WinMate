@@ -1,0 +1,12 @@
+# Build output (Cloudflare Pages runs `python3 build.py` itself)
+dist/
+.cache/
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
