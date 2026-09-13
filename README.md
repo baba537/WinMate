@@ -8,7 +8,7 @@ WinMate is a free website that builds one install script for Windows.<br>
 Pick apps, pick a package manager, run the script – done.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Apps](https://img.shields.io/badge/apps-344-orange)
+![Apps](https://img.shields.io/badge/apps-373-orange)
 ![Package managers](https://img.shields.io/badge/winget%20%C2%B7%20Scoop%20%C2%B7%20Chocolatey-supported-brightgreen)
 ![Languages](https://img.shields.io/badge/lang-EN%20%C2%B7%20DE-lightgrey)
 
@@ -20,13 +20,15 @@ Pick apps, pick a package manager, run the script – done.
 
 ## Features
 
-- **344 curated apps in 24 categories**, including runtimes such as Visual C++ Redistributables, .NET, DirectX, XNA and Java.
+- **373 curated apps in 25 categories**, including runtimes such as Visual C++ Redistributables, .NET, DirectX, XNA and Java.
 - **Verified package IDs.** Every winget, Scoop and Chocolatey ID is checked against the real repositories (`tools/validate_packages.py`).
 - **Real app icons.** Each app has a hand-picked icon source (official Flathub icon, dashboard-icons, vendor site, …), downloaded and normalized by `tools/fetch_icons.py`.
 - **Only one administrator prompt.** The script relaunches itself elevated once and runs every installer from there. Installers that refuse admin rights (e.g. Spotify) automatically run as the normal user.
 - **Three ways to run:** double-click `WinMate-Install.cmd`, run the `.ps1`, or paste the script into PowerShell.
 - **Robust:** registers winget on fresh installs, installs Scoop/Chocolatey if needed, installs runtimes first, retries failed apps once and prints a summary. Log: `%TEMP%\WinMate-install.log`.
-- **Bundles:** Essentials, Gaming PC, Developer, Creator, Office & Study, Privacy.
+- **16 bundles in three groups** – Basics (Essentials, Runtimes, Office & Study, Home Office, Privacy), Play & Create (Gaming PC, Retro Gaming, Streamer, Creator, Media Center) and Tech & Server (Developer, Web Developer, AI Lab, Server Admin, Homeserver, PC Repair). A dialog shows the apps first; you can untick apps, add a bundle to your selection, switch bundles or select only that bundle. Apps you picked yourself are tracked separately.
+- **Keyboard first:** `/` search, arrow keys navigate, `Space` select, `A` select all visible, `C` clear, `U` undo, `B` bundles, `P`/`1`–`3` package manager, `S` script, `Y` copy, `D` download, `?` help.
+- **Retro arcade look** with an animated star field, synthwave grid and pixel-art icons (respects `prefers-reduced-motion`).
 - **Share links** (`?apps=firefox,vlc&pm=winget`) and selections saved in the browser.
 - **SEO & LLM friendly:** static pages for every app, category and bundle in English and German, JSON-LD, `sitemap.xml` with hreflang, `llms.txt`, `llms-full.txt` and a public `apps.json`.
 - **Private:** no cookies, no tracking, no third-party requests. Fonts and icons are self-hosted.
@@ -50,7 +52,7 @@ If the script is already started as administrator, the "noAdmin" apps are launch
 data/
   apps.json          app catalog (the file you edit)
   categories.json    category names and intros (EN/DE)
-  presets.json       bundles (EN/DE)
+  presets.json       bundles with group, pixel icon and apps (EN/DE)
 src/
   ps/engine.ps1      PowerShell installer engine embedded into every script
   js/app.js          script builder (no dependencies)
@@ -59,6 +61,7 @@ src/
   img/, fonts/       logo, favicons, OG image, self-hosted Silkscreen font
 build.py             static site generator -> dist/
 i18n.py              UI texts and FAQ (EN/DE)
+pixel.py             pixel-art icons and the animated arcade background
 tools/
   validate_packages.py   checks all package IDs against winget/Scoop/Chocolatey
   fetch_icons.py         downloads and normalizes icons
@@ -111,6 +114,10 @@ After the first deploy, add the site to Google Search Console and Bing Webmaster
    ```
 
 3. Check the icon on the page, then open a pull request.
+
+## Inspiration
+
+WinMate is inspired by [TuxMate](https://tuxmate.com/) ([abusoww/tuxmate](https://github.com/abusoww/tuxmate)), the bulk app installer for Linux. WinMate brings the same idea to Windows with winget, Scoop and Chocolatey. No code was copied.
 
 ## Disclaimer
 

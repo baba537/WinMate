@@ -16,6 +16,7 @@ import re
 import shutil
 from pathlib import Path
 
+import pixel
 from i18n import FAQ, T
 
 ROOT = Path(__file__).resolve().parent
@@ -161,10 +162,12 @@ def head(lang, *, title, description, path, alt_path=None, og_type="website", ex
     return "\n".join(parts)
 
 
-def header(lang, alt_path):
+def header(lang, alt_path, home_page=False):
     t = T[lang]
     other = "de" if lang == "en" else "en"
     home = url(lang)
+    help_btn = (f'<button class="icon-btn key-btn" type="button" data-help-open aria-label="{t["keys_dialog_title"]}" '
+                f'title="{t["keys_dialog_title"]} (?)">?</button>') if home_page else ""
     return f"""<a class="skip" href="#main">{t['skip']}</a>
 <header class="site-header">
   <div class="wrap header-inner">
@@ -174,11 +177,11 @@ def header(lang, alt_path):
     </a>
     <nav class="nav" aria-label="{t['nav_label']}">
       <a href="{home}#apps">{t['nav_apps']}</a>
-      <a href="{home}#how">{t['nav_how']}</a>
-      <a href="{home}#bundles">{t['nav_bundles']}</a>
-      <a href="{home}#faq">FAQ</a>
+      <a href="{url(lang, 'about/')}">{t['nav_about']}</a>
+      <a href="{url(lang, 'about/')}#faq">FAQ</a>
     </nav>
     <div class="header-actions">
+      {help_btn}
       <a class="btn-ghost lang-switch" href="{url(other, alt_path)}" hreflang="{other}" lang="{other}" title="{T[other]['lang_name']}">{other.upper()}</a>
       <button class="icon-btn" type="button" data-theme-toggle aria-label="{t['toggle_theme']}" title="{t['toggle_theme']}">{ICONS['theme']}</button>
       <a class="icon-btn" href="{REPO_URL}" rel="noopener" aria-label="GitHub" title="GitHub">{ICONS['github']}</a>
@@ -204,20 +207,22 @@ def footer(lang, cats, presets):
       <ul>
         <li><a href="{REPO_URL}" rel="noopener">GitHub</a></li>
         <li><a href="{REPO_URL}/issues" rel="noopener">{t['footer_report']}</a></li>
+        <li><a href="{url(lang, 'about/')}">{t['nav_about']}</a></li>
         <li><a href="{url(lang, 'privacy/')}">{t['privacy']}</a></li>
         <li><a href="/llms.txt">llms.txt</a> · <a href="/apps.json">apps.json</a></li>
       </ul>
     </nav>
   </div>
-  <div class="wrap footer-bottom muted small">© {dt.date.today().year} WinMate · MIT License · {t['footer_made']}</div>
+  <div class="wrap footer-bottom muted small">© {dt.date.today().year} WinMate · MIT License · {t['footer_made']} · {t['footer_inspired']}</div>
 </footer>"""
 
 
-def page(lang, body, *, title, description, path, alt_path=None, cats, presets, extra_ld=(), og_type="website", noindex=False):
+def page(lang, body, *, title, description, path, alt_path=None, cats, presets, extra_ld=(), og_type="website", noindex=False, home_page=False):
     alt = path if alt_path is None else alt_path
     return (
         head(lang, title=title, description=description, path=path, alt_path=alt, extra_ld=extra_ld, og_type=og_type, noindex=noindex)
-        + "\n" + header(lang, alt)
+        + "\n" + pixel.background()
+        + "\n" + header(lang, alt, home_page)
         + f'\n<main id="main">\n{body}\n</main>\n'
         + footer(lang, cats, presets)
         + "\n</body>\n</html>\n"
@@ -265,7 +270,7 @@ def card(lang, app):
         f'<span class="card-desc" id="d-{app["id"]}">{esc(app["description"][lang])}</span></span>'
         f'<span class="check" aria-hidden="true"></span></label>'
         f'<span class="card-foot"><span class="pms" aria-hidden="true">{badges}</span>'
-        f'<span class="na-note" hidden>{t["not_available_short"]}</span>'
+        f'<span class="na-note" hidden>{t["not_available_short"]}</span><span class="via" hidden></span>'
         f'<a class="card-more" href="{url(lang, "apps/" + app["id"] + "/")}">{t["details"]}</a></span>'
         "</li>"
     )
@@ -295,75 +300,63 @@ def mini_list(lang, apps):
 
 
 # ----------------------------------------------------------------------------- pages
+BUNDLE_GROUPS = ("basics", "play", "tech")
+
+
+def bundle_sidebar(lang, presets):
+    t = T[lang]
+    groups = []
+    for g in BUNDLE_GROUPS:
+        tiles = "".join(
+            f'<li><button type="button" class="bundle-tile g-{g}" data-bundle="{p["id"]}" data-apps="{",".join(p["apps"])}" '
+            f'data-name="{esc(p[lang]["name"])}" data-title="{esc(p[lang]["title"])}" data-intro="{esc(p[lang]["intro"])}" '
+            f'data-group="{esc(t["bundle_groups"][g])}" data-url="{url(lang, "bundle/" + p["id"] + "/")}" aria-haspopup="dialog">'
+            f'<span class="bt-icon">{pixel.svg(p["icon"])}</span><span class="bt-name">{esc(p[lang]["name"])}</span>'
+            f'<span class="bt-count">{len(p["apps"])}</span></button></li>'
+            for p in presets if p["group"] == g)
+        groups.append(f'<div class="bundle-group"><h4 class="group-title g-{g}">{esc(t["bundle_groups"][g])}</h4><ul class="bundle-grid">{tiles}</ul></div>')
+    return "".join(groups)
+
+
 def home_page(lang, apps, cats, presets, by_cat):
     t = T[lang]
     n = len(apps)
     cat_nav = "".join(
         f'<li><a href="#cat-{c["id"]}" data-cat-link="{c["id"]}"><span>{esc(c[lang]["name"])}</span><span class="count">{len(by_cat[c["id"]])}</span></a></li>'
         for c in cats)
-    preset_btns = "".join(
-        f'<button type="button" class="chip" data-preset="{p["id"]}" data-apps="{",".join(p["apps"])}">'
-        f'<span aria-hidden="true">{p["emoji"]}</span> {esc(p[lang]["name"])}</button>' for p in presets)
     sections = []
     for c in cats:
         items = "".join(card(lang, a) for a in by_cat[c["id"]])
         sections.append(
             f'<section class="cat" id="cat-{c["id"]}" aria-labelledby="h-{c["id"]}">'
-            f'<div class="cat-head"><h3 id="h-{c["id"]}">{esc(c[lang]["name"])} <span class="count">{len(by_cat[c["id"]])}</span></h3>'
+            f'<div class="cat-head"><h2 id="h-{c["id"]}">{esc(c[lang]["name"])} <span class="count">{len(by_cat[c["id"]])}</span></h2>'
             f'<a class="cat-link small" href="{url(lang, "category/" + c["id"] + "/")}">{t["category_page"]}</a></div>'
             f'<ul class="cards">{items}</ul></section>')
-    steps = "".join(f'<li class="step"><span class="step-no">{i}</span><h3>{esc(h)}</h3><p>{p}</p></li>' for i, (h, p) in enumerate(t["steps"], 1))
-    bundles = "".join(
-        f'<li class="bundle"><a href="{url(lang, "bundle/" + p["id"] + "/")}">'
-        f'<span class="bundle-emoji" aria-hidden="true">{p["emoji"]}</span><span class="bundle-name">{esc(p[lang]["name"])}</span>'
-        f'<span class="bundle-icons">{"".join(icon_img(next(a for a in apps if a["id"] == aid), 24) for aid in p["apps"][:6])}</span>'
-        f'<span class="muted small">{t["n_apps"].format(n=len(p["apps"]))}</span></a></li>' for p in presets)
-    faq_html = "".join(f'<details class="faq-item"><summary><h3>{esc(q)}</h3></summary><div class="faq-a">{a}</div></details>' for q, a in FAQ[lang])
-    compare_rows = "".join(f"<tr><th scope=\"row\">{esc(r[0])}</th><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td></tr>" for r in t["compare_rows"])
-    popular = [a for a in apps if a["id"] in ("firefox", "chrome", "discord", "steam", "vlc", "spotify", "7zip", "vscode")]
+    keys_short = "".join(f"<li><kbd>{esc(k)}</kbd><span>{esc(v)}</span></li>" for k, v in t["keys_short"])
+    keys_all = "".join(f"<li><kbd>{esc(k)}</kbd><span>{esc(v)}</span></li>" for k, v in t["keys_all"])
 
     body = f"""
-<section class="hero">
-  <div class="wrap hero-grid">
-    <div class="hero-copy">
-      <p class="eyebrow">{t['hero_eyebrow']}</p>
-      <h1>{t['hero_title']}</h1>
-      <p class="lead">{t['hero_lead'].format(n=n)}</p>
-      <div class="hero-cta">
-        <a class="btn btn-primary" href="#apps">{t['hero_cta']}</a>
-        <a class="btn" href="#how">{t['nav_how']}</a>
-      </div>
-      <ul class="hero-points">{''.join(f'<li>{p}</li>' for p in t['hero_points'])}</ul>
+<section class="marquee">
+  <div class="wrap marquee-inner">
+    <div class="marquee-copy">
+      <h1><span class="h1-pixel">WinMate</span> {esc(t['hero_title'])}</h1>
+      <p class="lead">{esc(t['hero_lead'].format(n=n))}</p>
     </div>
-    <div class="hero-visual" aria-hidden="true">
-      <div class="term">
-        <div class="term-bar"><span></span><span></span><span></span><b>WinMate-Install.cmd</b></div>
-        <pre class="term-body"><span class="c-mute">  W I N M A T E</span>
-<span class="c-mute">  Installing 8 app(s) with winget</span>
-
-<span class="c-acc">==&gt;</span> Requesting administrator rights once
-<span class="c-acc">==&gt;</span> [1/8] Mozilla Firefox
-<span class="c-acc">==&gt;</span> [2/8] Discord
-<span class="c-mute">    ███████████████████████░░░  88%</span>
-
-<span class="c-ok">  [OK]</span> Mozilla Firefox
-<span class="c-ok">  [OK]</span> Discord<span class="caret"></span></pre>
-      </div>
-      <div class="hero-tiles">{''.join(f'<span class="tile">{icon_img(a, 36, lazy=False)}</span>' for a in popular)}</div>
-    </div>
+    <dl class="hud">
+      <div class="hud-cell"><dt>{t['hud_apps']}</dt><dd>{n:03d}</dd></div>
+      <div class="hud-cell hud-sel"><dt>{t['hud_selected']}</dt><dd id="hudSel">000</dd></div>
+      <div class="hud-cell"><dt>{t['hud_bundles']}</dt><dd>{len(presets):03d}</dd></div>
+      <div class="hud-cell"><dt>{t['hud_pm']}</dt><dd id="hudPm">WINGET</dd></div>
+    </dl>
   </div>
 </section>
 
-<section id="apps" class="catalog" aria-labelledby="apps-title">
+<section id="apps" class="catalog" aria-label="{t['catalog_title']}">
   <div class="wrap">
-    <div class="section-head">
-      <h2 id="apps-title">{t['catalog_title']}</h2>
-      <p class="muted">{t['catalog_lead']}</p>
-    </div>
     <div class="catalog-layout">
       <aside class="sidebar" aria-label="{t['filters']}">
         <div class="panel">
-          <h3 class="panel-title" id="pm-label">{t['pm_title']}</h3>
+          <h2 class="panel-title" id="pm-label">{t['pm_title']}</h2>
           <div class="segmented" role="radiogroup" aria-labelledby="pm-label">
             <button type="button" role="radio" aria-checked="true" data-pm="winget">winget</button>
             <button type="button" role="radio" aria-checked="false" data-pm="scoop">Scoop</button>
@@ -373,14 +366,18 @@ def home_page(lang, apps, cats, presets, by_cat):
           <p class="pm-hint small muted" data-pm-hint="scoop" hidden>{t['pm_hint_scoop']}</p>
           <p class="pm-hint small muted" data-pm-hint="choco" hidden>{t['pm_hint_choco']}</p>
         </div>
-        <div class="panel">
-          <h3 class="panel-title">{t['presets_title']}</h3>
-          <div class="chips">{preset_btns}</div>
+        <div class="panel" id="bundles">
+          <h2 class="panel-title">{t['presets_title']}</h2>
+          {bundle_sidebar(lang, presets)}
         </div>
         <nav class="panel cat-nav" aria-label="{t['footer_categories']}">
-          <h3 class="panel-title">{t['footer_categories']}</h3>
+          <h2 class="panel-title">{t['footer_categories']}</h2>
           <ul>{cat_nav}</ul>
         </nav>
+        <div class="panel keys-panel">
+          <h2 class="panel-title">{t['keys_title']}</h2>
+          <ul class="keys">{keys_short}</ul>
+        </div>
       </aside>
       <div class="catalog-main">
         <div class="toolbar">
@@ -401,50 +398,16 @@ def home_page(lang, apps, cats, presets, by_cat):
   </div>
 </section>
 
-<section id="how" class="section" aria-labelledby="how-title">
-  <div class="wrap">
-    <div class="section-head"><h2 id="how-title">{t['how_title']}</h2><p class="muted">{t['how_lead']}</p></div>
-    <ol class="steps">{steps}</ol>
-    <div class="callout" id="one-prompt">
-      <h3>{t['admin_title']}</h3>
-      <p>{t['admin_text']}</p>
-    </div>
-  </div>
-</section>
-
-<section id="compare" class="section" aria-labelledby="compare-title">
-  <div class="wrap">
-    <div class="section-head"><h2 id="compare-title">{t['compare_title']}</h2><p class="muted">{t['compare_lead']}</p></div>
-    <div class="table-wrap"><table class="compare">
-      <thead><tr><th scope="col"></th><th scope="col">winget</th><th scope="col">Scoop</th><th scope="col">Chocolatey</th></tr></thead>
-      <tbody>{compare_rows}</tbody>
-    </table></div>
-  </div>
-</section>
-
-<section id="bundles" class="section" aria-labelledby="bundles-title">
-  <div class="wrap">
-    <div class="section-head"><h2 id="bundles-title">{t['bundles_title']}</h2><p class="muted">{t['bundles_lead']}</p></div>
-    <ul class="bundles">{bundles}</ul>
-  </div>
-</section>
-
-<section id="faq" class="section" aria-labelledby="faq-title">
-  <div class="wrap narrow">
-    <div class="section-head"><h2 id="faq-title">{t['faq_title']}</h2></div>
-    <div class="faq">{faq_html}</div>
-  </div>
-</section>
-
 <div class="selbar" id="selbar" hidden>
   <div class="wrap selbar-inner">
     <div class="selbar-info">
-      <strong id="selCount">0</strong> <span id="selLabel">{t['selected']}</span>
-      <span class="selbar-icons" id="selIcons" aria-hidden="true"></span>
+      <strong id="selCount" class="coin">0</strong>
+      <span class="selbar-text"><span id="selLabel">{t['selected']}</span> <span class="muted small" id="selBreakdown"></span></span>
+      <span class="selbar-bundles" id="selBundles"></span>
     </div>
     <div class="selbar-actions">
-      <button type="button" class="btn-ghost" id="clearSel">{t['clear']}</button>
-      <button type="button" class="btn btn-primary" id="openScript">{t['get_script']}</button>
+      <button type="button" class="btn-ghost" id="clearSel">{t['clear']} <kbd>C</kbd></button>
+      <button type="button" class="btn btn-primary btn-start" id="openScript">{t['get_script']} <kbd>S</kbd></button>
     </div>
   </div>
 </div>
@@ -455,13 +418,34 @@ def home_page(lang, apps, cats, presets, by_cat):
   <p class="muted" id="dlgSummary"></p>
   <ul class="dlg-warnings" id="dlgWarnings"></ul>
   <div class="dlg-actions">
-    <button type="button" class="btn btn-primary" id="dlCmd">{ICONS['download']}<span>{t['dl_cmd']}</span></button>
-    <button type="button" class="btn" id="copyPs">{ICONS['copy']}<span>{t['copy_ps']}</span></button>
+    <button type="button" class="btn btn-primary" id="dlCmd">{ICONS['download']}<span>{t['dl_cmd']}</span> <kbd>D</kbd></button>
+    <button type="button" class="btn" id="copyPs">{ICONS['copy']}<span>{t['copy_ps']}</span> <kbd>Y</kbd></button>
     <button type="button" class="btn-ghost" id="dlPs">{t['dl_ps1']}</button>
     <button type="button" class="btn-ghost" id="copyLink">{t['copy_link']}</button>
   </div>
   <ol class="dlg-steps">{''.join(f'<li>{s}</li>' for s in t['run_steps'])}</ol>
   <details class="dlg-script"><summary>{t['show_script']}</summary><pre><code id="scriptPreview"></code></pre></details>
+</dialog>
+
+<dialog class="dialog bundle-dialog" id="bundleDialog" aria-labelledby="bd-title">
+  <form method="dialog" class="dialog-close-form"><button class="icon-btn dialog-close" aria-label="{t['close']}">✕</button></form>
+  <div class="bd-head">
+    <span class="bd-icon" id="bdIcon"></span>
+    <div>
+      <p class="eyebrow" id="bdGroup"></p>
+      <h2 id="bd-title"></h2>
+      <p class="muted" id="bdIntro"></p>
+    </div>
+  </div>
+  <p class="bd-meta"><strong id="bdCount"></strong> <span class="muted" id="bdHint"></span> <a id="bdPage" class="small" href="#">{t['details']} →</a></p>
+  <ul class="bd-list" id="bdList"></ul>
+  <div class="bd-actions" id="bdActions"></div>
+</dialog>
+
+<dialog class="dialog help-dialog" id="helpDialog" aria-labelledby="help-title">
+  <form method="dialog" class="dialog-close-form"><button class="icon-btn dialog-close" aria-label="{t['close']}">✕</button></form>
+  <h2 id="help-title">{t['keys_dialog_title']}</h2>
+  <ul class="keys keys-all">{keys_all}</ul>
 </dialog>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script type="application/json" id="wm-i18n">{json.dumps(t['js'], ensure_ascii=False)}</script>
@@ -481,6 +465,54 @@ def home_page(lang, apps, cats, presets, by_cat):
             "featureList": t["hero_points_plain"], "image": f"{SITE_URL}/img/og-image.png",
         }),
         json_ld({
+            "@context": "https://schema.org", "@type": "ItemList", "name": t["presets_title"],
+            "itemListElement": [{"@type": "ListItem", "position": i, "name": p[lang]["title"], "url": abs_url(lang, "bundle/" + p["id"] + "/")}
+                                for i, p in enumerate(presets, 1)],
+        }),
+    ]
+    return page(lang, body, title=t["meta_title"], description=t["meta_description"].format(n=n), path="",
+                cats=cats, presets=presets, extra_ld=ld, home_page=True)
+
+
+def about_page(lang, apps, cats, presets):
+    t = T[lang]
+    steps = "".join(f'<li class="step"><span class="step-no">{i}</span><h3>{esc(h)}</h3><p>{p}</p></li>' for i, (h, p) in enumerate(t["steps"], 1))
+    faq_html = "".join(f'<details class="faq-item"><summary><h3>{esc(q)}</h3></summary><div class="faq-a">{a}</div></details>' for q, a in FAQ[lang])
+    compare_rows = "".join(f"<tr><th scope=\"row\">{esc(r[0])}</th><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td></tr>" for r in t["compare_rows"])
+    nav, bc_ld = breadcrumbs(lang, [("WinMate", ""), (t["about_title"], None)])
+    body = f"""
+<div class="wrap page about">
+  {nav}
+  <header class="list-hero">
+    <h1>{t['about_title']}</h1>
+    <p class="lead">{t['about_lead']}</p>
+    <p><a class="btn btn-primary" href="{url(lang)}#apps">{t['nav_apps']} →</a></p>
+  </header>
+  <section aria-labelledby="how-title">
+    <h2 id="how-title">{t['how_title']}</h2>
+    <ol class="steps">{steps}</ol>
+    <div class="callout" id="one-prompt"><h3>{t['admin_title']}</h3><p>{t['admin_text']}</p></div>
+  </section>
+  <section aria-labelledby="compare-title" class="section-sm">
+    <h2 id="compare-title">{t['compare_title']}</h2>
+    <p class="muted">{t['compare_lead']}</p>
+    <div class="table-wrap"><table class="compare">
+      <thead><tr><th scope="col"></th><th scope="col">winget</th><th scope="col">Scoop</th><th scope="col">Chocolatey</th></tr></thead>
+      <tbody>{compare_rows}</tbody>
+    </table></div>
+  </section>
+  <section id="faq" aria-labelledby="faq-title" class="section-sm">
+    <h2 id="faq-title">{t['faq_title']}</h2>
+    <div class="faq">{faq_html}</div>
+  </section>
+  <section aria-labelledby="credits-title" class="section-sm">
+    <h2 id="credits-title">{t['credits_title']}</h2>
+    <p>{t['credits_html']}</p>
+  </section>
+</div>"""
+    ld = [
+        bc_ld,
+        json_ld({
             "@context": "https://schema.org", "@type": "FAQPage",
             "mainEntity": [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": re.sub(r"<[^>]+>", "", a)}} for q, a in FAQ[lang]],
         }),
@@ -489,7 +521,7 @@ def home_page(lang, apps, cats, presets, by_cat):
             "step": [{"@type": "HowToStep", "position": i, "name": h, "text": re.sub(r"<[^>]+>", "", p)} for i, (h, p) in enumerate(t["steps"], 1)],
         }),
     ]
-    return page(lang, body, title=t["meta_title"], description=t["meta_description"].format(n=n), path="",
+    return page(lang, body, title=f"{t['about_title']} – FAQ | WinMate", description=t["about_meta"], path="about/",
                 cats=cats, presets=presets, extra_ld=ld)
 
 
@@ -568,18 +600,20 @@ def list_page(lang, *, kind, item, list_apps, apps, cats, presets, title, h1, in
             f'<span class="muted small">{esc(a["description"][lang])}</span></span></a>'
             f'<pre><code>{esc(first)}</code></pre></li>')
     ids = ",".join(a["id"] for a in list_apps)
+    select_href = f'{url(lang)}?bundle={item["id"]}#apps' if kind == "bundle" else f"{url(lang)}?apps={ids}#apps"
+    icon = f'<span class="list-hero-icon g-{item["group"]}">{pixel.svg(item["icon"])}</span>' if kind == "bundle" else ""
     other_lists = (
         "".join(f'<li><a class="chip" href="{url(lang, "category/" + c["id"] + "/")}">{esc(c[lang]["name"])}</a></li>' for c in cats if c["id"] != item["id"])
         if kind == "category" else
-        "".join(f'<li><a class="chip" href="{url(lang, "bundle/" + p["id"] + "/")}">{p["emoji"]} {esc(p[lang]["name"])}</a></li>' for p in presets if p["id"] != item["id"])
+        "".join(f'<li><a class="chip bundle-chip g-{p["group"]}" href="{url(lang, "bundle/" + p["id"] + "/")}">{pixel.svg(p["icon"])} {esc(p[lang]["name"])}</a></li>' for p in presets if p["id"] != item["id"])
     )
     body = f"""
 <div class="wrap narrow page">
   {nav}
   <header class="list-hero">
-    <h1>{esc(h1)}</h1>
+    {icon}<h1>{esc(h1)}</h1>
     <p class="lead">{esc(intro)}</p>
-    <p><a class="btn btn-primary" href="{url(lang)}?apps={ids}#apps">{t['select_all_in_winmate'].format(n=len(list_apps))}</a></p>
+    <p><a class="btn btn-primary" href="{select_href}">{t['select_all_in_winmate'].format(n=len(list_apps))}</a></p>
   </header>
   <ol class="list-apps">{''.join(rows)}</ol>
   <h2>{t['more_categories'] if kind == 'category' else t['more_bundles']}</h2>
@@ -619,12 +653,15 @@ def llms_txt(apps, cats, presets):
         "- Supported: Windows 10 and Windows 11. winget is the default; Scoop and Chocolatey are optional.",
         "- Output: `WinMate-Install.cmd` (double-click), a `.ps1` file, or a PowerShell snippet to paste.",
         "- One UAC prompt: the script relaunches itself elevated once; apps that refuse elevation (e.g. Spotify) run as the normal user.",
+        "- Bundles: curated sets such as Essentials, Gaming PC, Retro Gaming, Streamer, Developer, Server Admin and Homeserver.",
+        "- Keyboard shortcuts: / search, arrow keys navigate, Space select, S script, ? help.",
         "- Languages: English (/) and German (/de/).",
+        "- Inspired by TuxMate (https://tuxmate.com), the bulk app installer for Linux.",
         "",
         "## Main pages",
         f"- [App catalog and script builder]({SITE_URL}/#apps): select apps, choose a package manager, download the script",
-        f"- [How it works]({SITE_URL}/#how)",
-        f"- [FAQ]({SITE_URL}/#faq)",
+        f"- [How it works]({SITE_URL}/about/): single admin prompt, package manager comparison",
+        f"- [FAQ]({SITE_URL}/about/#faq)",
         f"- [German version]({SITE_URL}/de/)",
         "",
         "## Data",
@@ -719,7 +756,7 @@ def build():
     shutil.copy(SRC / "img" / "favicon.ico", DIST / "favicon.ico")
     for f in ("fonts/silkscreen-400.woff2", "fonts/silkscreen-700.woff2"):
         hashed_copy(f)
-    css = (SRC / "css" / "style.css").read_text(encoding="utf-8")
+    css = (SRC / "css" / "style.css").read_text(encoding="utf-8").replace("/*__STARS__*/", pixel.star_css())
     for f in ("fonts/silkscreen-400.woff2", "fonts/silkscreen-700.woff2"):
         css = css.replace(f"../{f}", "/" + ASSETS[f])
     hashed_copy("css/style.css", css.encode("utf-8"))
@@ -728,11 +765,12 @@ def build():
     js = js.replace('"__ENGINE__"', json.dumps(engine)).replace('"__SITE_URL__"', json.dumps(SITE_URL))
     hashed_copy("js/app.js", js.encode("utf-8"))
 
-    paths = [("", "1.0")]
+    paths = [("", "1.0"), ("about/", "0.7")]
     for lang in LANGS:
         prefix = "de/" if lang == "de" else ""
         write(prefix + "index.html", home_page(lang, apps, cats, presets, by_cat))
         write(prefix + "privacy/index.html", privacy_page(lang, cats, presets))
+        write(prefix + "about/index.html", about_page(lang, apps, cats, presets))
         for a in apps:
             write(f"{prefix}apps/{a['id']}/index.html", app_page(lang, a, apps, cats, presets, by_cat))
         for c in cats:
