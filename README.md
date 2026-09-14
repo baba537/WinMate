@@ -12,7 +12,7 @@ Pick apps, pick a package manager, run the script – done.
 ![Package managers](https://img.shields.io/badge/winget%20%C2%B7%20Scoop%20%C2%B7%20Chocolatey-supported-brightgreen)
 ![Languages](https://img.shields.io/badge/lang-EN%20%C2%B7%20DE-lightgrey)
 
-**[→ winmate.pages.dev](https://winmate.pages.dev)**
+**[→ winmate.baba537.workers.dev](https://winmate.baba537.workers.dev)**
 
 </div>
 
@@ -85,7 +85,7 @@ python -m http.server 8000 -d dist    # open http://localhost:8000
    - Framework preset: **None**
    - Build command: `python3 build.py`
    - Build output directory: `dist`
-   - Environment variable (optional): `SITE_URL=https://your-domain.tld` (default `https://winmate.pages.dev`)
+   - Environment variable (optional): `SITE_URL=https://your-domain.tld` (default `https://winmate.baba537.workers.dev`)
 4. Deploy. `_headers` (security + caching), `_redirects`, `sitemap.xml`, `robots.txt` and `llms.txt` are generated automatically.
 
 After the first deploy, add the site to Google Search Console and Bing Webmaster Tools and submit `https://<domain>/sitemap.xml`.

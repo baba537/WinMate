@@ -255,7 +255,7 @@
     Write-Host ''
     Write-Host '  W I N M A T E' -ForegroundColor Cyan
     Write-Host "  Installing $(@($Apps).Count) app(s) with $PackageManager" -ForegroundColor Gray
-    Write-Host '  https://winmate.pages.dev' -ForegroundColor DarkGray
+    Write-Host '  https://winmate.baba537.workers.dev' -ForegroundColor DarkGray
 
     $results = @()
     $isAdmin = Test-IsAdmin

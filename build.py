@@ -5,7 +5,7 @@ Standard library only, so it runs on Cloudflare Pages without extra dependencies
   Build command:     python3 build.py
   Output directory:  dist
 
-Set SITE_URL (env var) to your production origin, e.g. SITE_URL=https://winmate.pages.dev
+Set SITE_URL (env var) to your production origin, e.g. SITE_URL=https://winmate.baba537.workers.dev
 """
 import datetime as dt
 import hashlib
@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
 DATA = ROOT / "data"
 DIST = ROOT / "dist"
-SITE_URL = os.environ.get("SITE_URL", "https://winmate.pages.dev").rstrip("/")
+SITE_URL = os.environ.get("SITE_URL", "https://winmate.baba537.workers.dev").rstrip("/")
 REPO_URL = "https://github.com/baba537/WinMate"
 LANGS = ("en", "de")
 PMS = ("winget", "scoop", "choco")
@@ -760,7 +760,7 @@ def build():
     for f in ("fonts/silkscreen-400.woff2", "fonts/silkscreen-700.woff2"):
         css = css.replace(f"../{f}", "/" + ASSETS[f])
     hashed_copy("css/style.css", css.encode("utf-8"))
-    engine = (SRC / "ps" / "engine.ps1").read_text(encoding="utf-8").replace("https://winmate.pages.dev", SITE_URL)
+    engine = (SRC / "ps" / "engine.ps1").read_text(encoding="utf-8").replace("https://winmate.baba537.workers.dev", SITE_URL)
     js = (SRC / "js" / "app.js").read_text(encoding="utf-8")
     js = js.replace('"__ENGINE__"', json.dumps(engine)).replace('"__SITE_URL__"', json.dumps(SITE_URL))
     hashed_copy("js/app.js", js.encode("utf-8"))
