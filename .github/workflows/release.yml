@@ -35,7 +35,7 @@ jobs:
           (cd release && sha256sum * > SHA256SUMS)
           cat release/SHA256SUMS
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: "release/*"
       - name: Release notes from CHANGELOG.md
