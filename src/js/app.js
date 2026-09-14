@@ -4,6 +4,8 @@
 
   var ENGINE = "__ENGINE__";
   var SITE_URL = "__SITE_URL__";
+  var ENGINE_SHA256 = "__ENGINE_SHA256__";
+  var VERSION = "__WINMATE_VERSION__";
   var PM_LABEL = { winget: "winget", scoop: "Scoop", choco: "Chocolatey" };
   var PMS = ["winget", "scoop", "choco"];
   var STORE_KEY = "wm-selection-v3";
@@ -31,6 +33,15 @@
       var next = current === "dark" ? "light" : "dark";
       root.dataset.theme = next;
       store.set("wm-theme", next);
+    });
+  });
+
+  $$("[data-fx-toggle]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var root = document.documentElement;
+      var off = root.dataset.fx !== "off";
+      if (off) root.dataset.fx = "off"; else delete root.dataset.fx;
+      store.set("wm-fx", off ? "off" : "on");
     });
   });
 
@@ -99,7 +110,8 @@
   });
 
   /* State: apps picked by hand, active bundles, and bundle apps the user deselected. */
-  var state = { pm: "winget", manual: [], bundles: [], excluded: [] };
+  var DEFAULT_OPTIONS = { mode: "install", dry: false, restore: false, pin: false, proxy: "" };
+  var state = { pm: "winget", manual: [], bundles: [], excluded: [], options: JSON.parse(JSON.stringify(DEFAULT_OPTIONS)) };
   var undoState = null;
 
   function loadState() {
@@ -116,6 +128,12 @@
     state.manual = (saved.manual || []).filter(function (id) { return byId[id]; });
     state.bundles = (saved.bundles || []).filter(function (id) { return bundles[id]; });
     state.excluded = (saved.excluded || []).filter(function (id) { return byId[id]; });
+    if (saved.options && typeof saved.options === "object") {
+      Object.keys(DEFAULT_OPTIONS).forEach(function (k) {
+        if (typeof saved.options[k] === typeof DEFAULT_OPTIONS[k]) state.options[k] = saved.options[k];
+      });
+      if (["install", "upgrade", "uninstall"].indexOf(state.options.mode) < 0) state.options.mode = "install";
+    }
   }
   function save() { store.set(STORE_KEY, JSON.stringify(state)); }
   function snapshot() { return JSON.parse(JSON.stringify(state)); }
@@ -470,7 +488,7 @@
     return { apps: apps, skipped: skipped };
   }
 
-  function buildScript(pm, apps) {
+  function buildScript(pm, apps, opts) {
     var entries = [], buckets = [];
     // Runtimes (Visual C++, .NET, DirectX, ...) first, so apps that depend on them install cleanly.
     apps = apps.filter(function (c) { return c.dataset.cat === "runtimes"; })
@@ -485,6 +503,9 @@
           var parts = ["Name = " + ps(ids.length > 1 ? name.replace(/\s*\(.*\)$/, "") + " - " + id : name), "Id = " + ps(isStore ? id.slice(8) : id)];
           if (isStore) parts.push("Source = 'msstore'");
           if (noAdmin) parts.push("NoAdmin = $true");
+          var versions = (card.dataset.wv || "").split(",");
+          var v = versions[ids.indexOf(id)];
+          if (opts.pin && !isStore && v) parts.push("Version = " + ps(v));
           entries.push("        @{ " + parts.join("; ") + " }");
         });
       } else if (pm === "scoop") {
@@ -492,31 +513,64 @@
         if (bucket !== "main" && buckets.indexOf(bucket) < 0) buckets.push(bucket);
         entries.push("        @{ Name = " + ps(name) + "; Id = " + ps(card.dataset.scoop) + " }");
       } else {
-        entries.push("        @{ Name = " + ps(name) + "; Id = " + ps(card.dataset.choco) + " }");
+        var cparts = ["Name = " + ps(name), "Id = " + ps(card.dataset.choco)];
+        if (opts.pin && card.dataset.cv) cparts.push("Version = " + ps(card.dataset.cv));
+        entries.push("        @{ " + cparts.join("; ") + " }");
       }
     });
     var today = new Date().toISOString().slice(0, 10);
+    var label = { install: "install", upgrade: "update", uninstall: "uninstall" }[opts.mode];
+    // Keep this format in sync with src/ps/cli.ps1 (winmate.ps1 -Verify reads the markers).
     return [
       "# ============================================================================",
-      "#  WinMate install script - " + SITE_URL,
-      "#  Generated " + today + " - " + apps.length + " app(s) with " + PM_LABEL[pm],
-      "#  Run: double-click WinMate-Install.cmd, or paste this script into PowerShell.",
-      "#  Only one administrator prompt is shown. Review the script before running it.",
-      "#  Source code: https://github.com/baba537/WinMate",
+      "#  WinMate " + VERSION + " " + label + " script - " + SITE_URL,
+      "#  Generated " + today + " - " + entries.length + " package(s) with " + PM_LABEL[pm] + (opts.dry ? " (dry run)" : ""),
+      "#  Engine SHA-256: " + ENGINE_SHA256,
+      "#  Verify: winmate.ps1 -Verify <file>   Details: " + SITE_URL + "/security/",
+      "#  Run: double-click the .cmd file, or paste this script into PowerShell.",
       "# ============================================================================",
       "& {",
-      "    param([string]$Phase, [string]$ResultFile, [switch]$NoPause)",
-      "",
+      "    param([string]$Phase, [string]$ResultFile, [switch]$NoPause, [string]$RunId)",
+      "    # >>> config",
       "    $PackageManager = " + ps(pm),
+      "    $Mode = " + ps(opts.mode),
+      "    $DryRun = " + (opts.dry ? "$true" : "$false"),
+      "    $RestorePoint = " + (opts.restore ? "$true" : "$false"),
+      "    $Proxy = " + ps(opts.proxy.trim()),
       "    $Buckets = @(" + buckets.map(ps).join(", ") + ")",
       "    $Apps = @(",
       entries.join("\n"),
       "    )",
-      "",
-      ENGINE.replace(/\s+$/, ""),
+      "    # <<< config",
+      "    # >>> engine",
+      ENGINE,
+      "    # <<< engine",
       "}",
       ""
     ].join("\n");
+  }
+
+  function wingetImportJson(apps, opts) {
+    var sources = { winget: [], msstore: [] };
+    apps.forEach(function (card) {
+      var ids = card.dataset.winget.split(",");
+      var versions = (card.dataset.wv || "").split(",");
+      ids.forEach(function (id, i) {
+        if (id.indexOf("msstore:") === 0) { sources.msstore.push({ PackageIdentifier: id.slice(8) }); return; }
+        var pkg = { PackageIdentifier: id };
+        if (opts.pin && versions[i]) pkg.Version = versions[i];
+        sources.winget.push(pkg);
+      });
+    });
+    var out = { $schema: "https://aka.ms/winget-packages.schema.2.0.json", CreationDate: new Date().toISOString(), WinGetVersion: "1.9", Sources: [] };
+    if (sources.winget.length) out.Sources.push({ Packages: sources.winget, SourceDetails: { Argument: "https://cdn.winget.microsoft.com/cache", Identifier: "Microsoft.Winget.Source_8wekyb3d8bbwe", Name: "winget", Type: "Microsoft.PreIndexed.Package" } });
+    if (sources.msstore.length) out.Sources.push({ Packages: sources.msstore, SourceDetails: { Argument: "https://storeedgefd.dsx.mp.microsoft.com/v9.0", Identifier: "StoreEdgeFD", Name: "msstore", Type: "Microsoft.Rest" } });
+    return JSON.stringify(out, null, 2) + "\n";
+  }
+
+  function fileBase() {
+    var o = state.options;
+    return "WinMate-" + (o.dry ? "DryRun-" : "") + { install: "Install", upgrade: "Update", uninstall: "Uninstall" }[o.mode];
   }
 
   function cmdWrapper(script) {
@@ -551,7 +605,7 @@
 
   function currentScript() {
     var sel = selection();
-    return sel.apps.length ? buildScript(state.pm, sel.apps) : "";
+    return sel.apps.length ? buildScript(state.pm, sel.apps, state.options) : "";
   }
 
   var scriptDialog = $("#scriptDialog");
@@ -559,10 +613,36 @@
 
   function names(list) { return list.map(function (c) { return c.dataset.name; }).join(", "); }
 
+  function renderOptions() {
+    var o = state.options;
+    $$("[data-mode]").forEach(function (b) { b.setAttribute("aria-checked", String(b.dataset.mode === o.mode)); });
+    $("#optDry").checked = o.dry;
+    $("#optRestore").checked = o.restore;
+    $("#optPin").checked = o.pin;
+    if (document.activeElement !== $("#optProxy")) $("#optProxy").value = o.proxy;
+    $("#dlCmdLabel").textContent = L.dl_cmd_label.replace("{file}", fileBase() + ".cmd");
+    $("#dlWingetJson").hidden = state.pm !== "winget";
+  }
+
   function openScript() {
-    var sel = selection();
     if (!selectedIds().length) { toast(L.select_first); return; }
+    refreshScript();
+    openDialog(scriptDialog);
+  }
+
+  function refreshScript() {
+    var sel = selection();
+    var o = state.options;
+    renderOptions();
     var warnings = [];
+    if (o.mode === "uninstall" && !o.dry) warnings.push(["warn", L.warn_uninstall]);
+    if (o.pin && state.pm === "scoop") warnings.push(["info", L.warn_pin_scoop]);
+    if (o.pin && state.pm !== "scoop") {
+      var unpinned = sel.apps.filter(function (c) {
+        return state.pm === "winget" ? c.dataset.winget.indexOf("msstore:") < 0 && !(c.dataset.wv || "").replace(/,/g, "") : !c.dataset.cv;
+      });
+      if (unpinned.length) warnings.push(["info", fmt(L.warn_pin_missing, { names: names(unpinned) })]);
+    }
     if (sel.skipped.length) warnings.push(["warn", fmt(L.warn_unavailable, { n: sel.skipped.length, pm: PM_LABEL[state.pm], names: names(sel.skipped) })]);
     if (state.pm === "winget") {
       var storeApps = sel.apps.filter(function (c) { return c.dataset.winget.indexOf("msstore:") >= 0; });
@@ -583,12 +663,21 @@
       ul.appendChild(li);
     });
     var hasApps = sel.apps.length > 0;
-    $("#dlgSummary").textContent = hasApps ? fmt(L.summary, { n: sel.apps.length, pm: PM_LABEL[state.pm] }) : fmt(L.nothing_for_pm, { pm: PM_LABEL[state.pm] });
-    ["#dlCmd", "#copyPs", "#dlPs"].forEach(function (s) { $(s).disabled = !hasApps; });
+    $("#dlgSummary").textContent = hasApps
+      ? fmt(L.summary_mode[o.mode], { n: sel.apps.length, pm: PM_LABEL[state.pm] }) + (o.dry ? L.dry_suffix : "")
+      : fmt(L.nothing_for_pm, { pm: PM_LABEL[state.pm] });
+    ["#dlCmd", "#copyPs", "#dlPs", "#dlWingetJson"].forEach(function (s) { $(s).disabled = !hasApps; });
     current = currentScript();
     $("#scriptPreview").textContent = current;
-    openDialog(scriptDialog);
   }
+
+  $$("[data-mode]").forEach(function (btn) {
+    btn.addEventListener("click", function () { state.options.mode = btn.dataset.mode; save(); refreshScript(); });
+  });
+  [["#optDry", "dry"], ["#optRestore", "restore"], ["#optPin", "pin"]].forEach(function (pair) {
+    $(pair[0]).addEventListener("change", function (e) { state.options[pair[1]] = e.target.checked; save(); refreshScript(); });
+  });
+  $("#optProxy").addEventListener("input", function (e) { state.options.proxy = e.target.value; save(); refreshScript(); });
 
   function copyScript() {
     var text = currentScript();
@@ -598,12 +687,46 @@
   function downloadCmd() {
     var text = currentScript();
     if (!text) { toast(L.select_first); return; }
-    download("WinMate-Install.cmd", cmdWrapper(text));
+    download(fileBase() + ".cmd", cmdWrapper(text));
   }
 
   $("#openScript").addEventListener("click", openScript);
   $("#dlCmd").addEventListener("click", downloadCmd);
-  $("#dlPs").addEventListener("click", function () { download("WinMate-Install.ps1", current.replace(/\r?\n/g, "\r\n")); });
+  $("#dlPs").addEventListener("click", function () { download(fileBase() + ".ps1", current.replace(/\r?\n/g, "\r\n")); });
+  $("#dlWingetJson").addEventListener("click", function () {
+    download("winmate-winget-import.json", wingetImportJson(selection().apps.filter(function (c) { return c.dataset.winget; }), state.options));
+  });
+
+  /* ---------------------------------------------------------------- profiles */
+  $("#profileExport").addEventListener("click", function () {
+    var profile = { $schema: "winmate-profile", version: 1, created: new Date().toISOString(), pm: state.pm,
+      manual: state.manual, bundles: state.bundles, excluded: state.excluded, options: state.options };
+    download("winmate-profile.json", JSON.stringify(profile, null, 2) + "\n");
+    toast(L.profile_exported);
+  });
+  $("#profileImport").addEventListener("change", function (e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var p = JSON.parse(reader.result);
+        if (!p || p.$schema !== "winmate-profile" || !Array.isArray(p.manual)) throw new Error("invalid");
+        undoState = snapshot();
+        state.pm = PM_LABEL[p.pm] ? p.pm : state.pm;
+        state.manual = p.manual.filter(function (id) { return byId[id]; });
+        state.bundles = (p.bundles || []).filter(function (id) { return bundles[id]; });
+        state.excluded = (p.excluded || []).filter(function (id) { return byId[id]; });
+        if (p.options) Object.keys(DEFAULT_OPTIONS).forEach(function (k) { if (typeof p.options[k] === typeof DEFAULT_OPTIONS[k]) state.options[k] = p.options[k]; });
+        save(); renderAll();
+        toast(fmt(L.profile_imported, { n: selectedIds().length }));
+      } catch (err) {
+        toast(L.profile_invalid);
+      }
+      e.target.value = "";
+    };
+    reader.readAsText(file);
+  });
   $("#copyPs").addEventListener("click", copyScript);
   $("#copyLink").addEventListener("click", function () { copyText(shareUrl()).then(function () { toast(L.link_copied); }); });
 

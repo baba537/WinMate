@@ -527,3 +527,25 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* ---------------------------------------------------------------- script options, profiles, trust */
+.dlg-options { display: grid; gap: .55rem; margin: 0 0 1rem; padding: .8rem .9rem 1rem; border: 2px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+.dlg-options legend { padding: 0 .4rem; font: 400 .72rem var(--font-pixel); letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+.seg-mode { margin-bottom: .2rem; }
+.opt-proxy { display: grid; gap: .25rem; font-size: .88rem; color: var(--muted); }
+.opt-proxy input { font: inherit; color: var(--text); background: var(--surface); border: 2px solid var(--border-strong); border-radius: var(--radius); padding: .45rem .6rem; }
+.opt-proxy input:focus { outline: none; border-color: var(--accent); }
+.engine-info { margin: -.4rem 0 1rem; overflow-wrap: anywhere; }
+.engine-info code { font-size: .8em; }
+.profile-panel p { margin: 0 0 .6rem; }
+.profile-actions { display: flex; gap: .4rem; }
+.profile-actions .btn-small { margin-left: 0; cursor: pointer; }
+.sources td, .sources th { font-size: .9rem; }
+.security section { margin-top: 2.5rem; }
+.security section ul, .security section ol { padding-left: 1.3rem; display: grid; gap: .45rem; }
+.security .compare { min-width: 760px; }
+.security .compare tbody th { white-space: normal; max-width: 16rem; color: var(--text); }
+
+/* Animations off (header toggle) */
+:root[data-fx="off"] .bg-stars, :root[data-fx="off"] .bg-floor, :root[data-fx="off"] .invader, :root[data-fx="off"] .bg-scan { display: none; }
+:root[data-fx="off"] *, :root[data-fx="off"] *::before, :root[data-fx="off"] *::after { animation: none !important; transition: none !important; }

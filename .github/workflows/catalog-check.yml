@@ -1,0 +1,68 @@
+name: Catalog check
+
+# Validates every package ID against the official winget, Scoop and Chocolatey indexes.
+# Weekly: updates data/versions.json and opens an issue when packages disappear.
+on:
+  schedule:
+    - cron: "23 4 * * 1"
+  pull_request:
+    paths:
+      - "data/apps.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate packages
+        id: validate
+        run: |
+          set +e
+          python tools/validate_packages.py --elevation --write-versions --report report.md
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+      # A push to main deploys the website, so version updates arrive as a pull request for review.
+      # Requires "Allow GitHub Actions to create and approve pull requests" in the repository settings.
+      - name: Propose verified versions
+        if: github.event_name != 'pull_request' && steps.validate.outputs.exit == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- data/versions.json; then
+            echo "No version changes."
+            exit 0
+          fi
+          branch="bot/verified-versions"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898131+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add data/versions.json
+          git commit -m "Update verified package versions ($(date -u +%F))"
+          git push --force origin "$branch"
+          gh pr view "$branch" >/dev/null 2>&1 || gh pr create --head "$branch" --title "Update verified package versions" \
+            --body "Automated weekly catalog check. Merging updates the versions shown on app pages and used for pinned installs." \
+            || echo "Could not open a pull request (check the repository setting). The branch $branch was pushed."
+      - name: Open or update issue
+        if: github.event_name != 'pull_request' && steps.validate.outputs.exit != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing=$(gh issue list --label catalog-check --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file report.md
+          else
+            gh label create catalog-check --color d93f0b --description "Automated catalog check" 2>/dev/null || true
+            gh issue create --title "Catalog check found broken packages" --label catalog-check --body-file report.md
+          fi
+      - name: Fail on errors
+        if: steps.validate.outputs.exit != '0'
+        run: exit 1

@@ -1,0 +1,40 @@
+name: Wrong or broken package
+description: An app fails to install, uses the wrong package ID or has a wrong icon.
+labels: ["catalog"]
+body:
+  - type: input
+    id: app
+    attributes:
+      label: App
+      description: Name or ID as shown on the website (e.g. vlc)
+    validations:
+      required: true
+  - type: dropdown
+    id: manager
+    attributes:
+      label: Package manager
+      options: [winget, Scoop, Chocolatey]
+    validations:
+      required: true
+  - type: dropdown
+    id: problem
+    attributes:
+      label: Problem
+      options:
+        - Installation fails
+        - Wrong or outdated package ID
+        - Wrong icon or description
+        - App is abandoned or unavailable
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Error code from the summary and the relevant part of the log (`winmate.ps1 -Logs` shows the log path).
+      render: text
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2

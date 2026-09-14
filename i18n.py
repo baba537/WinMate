@@ -9,6 +9,7 @@ SCHEMA_CATEGORY = {
     "remote": "UtilitiesApplication", "runtimes": "UtilitiesApplication", "ai": "UtilitiesApplication",
     "editors": "DeveloperApplication", "terminal": "DeveloperApplication", "devtools": "DeveloperApplication",
     "languages": "DeveloperApplication", "cli": "DeveloperApplication", "virtualization": "UtilitiesApplication",
+    "selfhost": "UtilitiesApplication",
 }
 
 T = {
@@ -43,6 +44,75 @@ T = {
         ],
         "keys_dialog_title": "Keyboard shortcuts",
         "nav_about": "How it works",
+        "nav_security": "Security",
+        "toggle_fx": "Turn animations on/off",
+        "sources_title": "Package sources",
+        "sources_lead": "WinMate installs exactly these packages. Versions are the latest ones found by the automated catalog check on {date}; pinned installs use them.",
+        "col_manager": "Package manager",
+        "col_package": "Package",
+        "col_version": "Verified version",
+        "col_manifest": "Source",
+        "manifest_link": "Manifest",
+        "opt_title": "Options",
+        "opt_mode": "What should the script do?",
+        "mode_install": "Install",
+        "mode_upgrade": "Update",
+        "mode_uninstall": "Uninstall",
+        "opt_dry": "Dry run – only show what would happen, change nothing",
+        "opt_restore": "Create a System Restore point first",
+        "opt_pin": "Pin the versions verified on {date} (winget, Chocolatey)",
+        "opt_proxy": "Proxy (optional, e.g. http://proxy:8080)",
+        "dl_winget_json": "winget import file",
+        "engine_info": "WinMate {version} · engine SHA-256 <code>{sha}</code> · <a href=\"{href}\">How to verify</a>",
+        "profile_title": "Profile",
+        "profile_hint": "Save your selection as a file and load it later – also works with winmate.ps1.",
+        "profile_export": "Export",
+        "profile_import": "Import",
+        "security_title": "Security & trust",
+        "security_meta": "What the WinMate script does with administrator rights, how packages are verified, the threat model, known limits and how to verify a script yourself.",
+        "security_lead": "WinMate scripts run installers with administrator rights. This page explains exactly what they do, what protects you, where the limits are – and how to check everything yourself instead of trusting us.",
+        "security_html": """<section id="what"><h2>What a WinMate script does</h2>
+<ul>
+<li>It only runs <code>winget</code>, <code>scoop</code> or <code>choco</code> for the packages listed at the top of the script. You see that list in the preview before downloading.</li>
+<li>It asks for administrator rights <b>once</b>. Apps that refuse elevation run as your normal user through a temporary scheduled task that is removed afterwards.</li>
+<li>It downloads nothing from WinMate. Installers come from the vendors, as described in the package manifests.</li>
+<li>It writes logs and a run record to <code>%LOCALAPPDATA%\\WinMate</code> and, after installing, an undo script that removes only the apps this run added.</li>
+<li>There is no telemetry. The website stores your selection only in your browser (<a href="{privacy}">privacy</a>).</li>
+</ul></section>
+<section id="verify"><h2>Verify a script</h2>
+<dl class="ids"><dt>Current version</dt><dd>{version}</dd><dt>Engine SHA-256</dt><dd><code>{sha}</code></dd><dt>Built from commit</dt><dd><a href="{commit_url}" rel="noopener"><code>{commit}</code></a></dd></dl>
+<p>Every generated script consists of a short configuration block (your apps) and the engine, which is identical for everyone. To check that nobody changed the engine:</p>
+<ol>
+<li>Download <code>winmate.ps1</code> from the <a href="{repo}/releases/latest" rel="noopener">latest GitHub release</a>. Releases are built by public GitHub Actions and carry a build provenance attestation: <code>gh attestation verify winmate.ps1 --repo baba537/WinMate</code></li>
+<li>Run <code>.\\winmate.ps1 -Verify .\\WinMate-Install.cmd</code>. It prints the apps the script will install and reports <b>OK</b> only if the engine matches the published hash.</li>
+<li>Or compare the engine block by hand with <a href="{repo}/blob/main/src/ps/engine.ps1" rel="noopener">src/ps/engine.ps1</a>. The website is built reproducibly from the repository, so anyone can rebuild it and compare (<code>build-info.json</code> lists the hashes).</li>
+</ol>
+<p>Prefer not to download anything? Use <b>Dry run</b> first: it only lists what would be installed.</p></section>
+<section id="packages"><h2>How packages are verified</h2>
+<ul>
+<li><b>winget</b>: manifests in <a href="https://github.com/microsoft/winget-pkgs" rel="noopener">microsoft/winget-pkgs</a> are validated and scanned by Microsoft before they are published. winget checks the SHA-256 hash of every installer against its manifest and refuses to run a mismatching file. Store apps are delivered by the Microsoft Store.</li>
+<li><b>Chocolatey</b>: community packages are moderated and virus-scanned; downloaded installers must carry checksums.</li>
+<li><b>Scoop</b>: manifests contain hashes that Scoop checks after downloading; buckets change through reviewed pull requests.</li>
+<li><b>WinMate</b>: a scheduled job checks every package ID against the official indexes each week (last check: {checked}) and records the latest versions. Scripts use <code>--exact</code> IDs and a fixed source, can pin those verified versions and can run as a dry run.</li>
+</ul></section>
+<section id="threats"><h2>Threat model</h2>
+<div class="table-wrap"><table class="compare"><thead><tr><th scope="col">Threat</th><th scope="col">Mitigation</th><th scope="col">Remaining risk</th></tr></thead><tbody>
+<tr><th scope="row">The website or hosting is compromised and serves a modified script</th><td>Open source, reproducible build in public CI, script preview, engine hash with <code>-Verify</code> against an attested release, strict Content-Security-Policy</td><td>Users who run scripts without looking at or verifying them</td></tr>
+<tr><th scope="row">A package source or manifest is compromised</th><td>Review, scanning and hash checks by winget, Chocolatey and Scoop; optional version pinning; dry run</td><td>WinMate cannot detect a malicious package that the upstream repository accepted</td></tr>
+<tr><th scope="row">A wrong or malicious package ID enters the catalog</th><td>Pull request review, CI validation against the official indexes, IDs visible on every app page and in the script</td><td>A reviewer overlooks a similar-looking ID</td></tr>
+<tr><th scope="row">Typosquatting and ambiguous names</th><td>Exact package IDs (<code>--exact</code>) and a fixed source (<code>--source winget</code>) instead of name searches</td><td>Low</td></tr>
+<tr><th scope="row">Abuse of the administrator session</th><td>One elevation for the listed packages only; no services, no persistent tasks; temporary files are deleted</td><td>Installers themselves run with full rights – inherent to installing software</td></tr>
+<tr><th scope="row">A broken installation</th><td>Optional restore point, run record, undo script for newly installed apps, retry, detailed logs</td><td>Undo cannot revert changes an installer makes outside its own uninstaller</td></tr>
+</tbody></table></div></section>
+<section id="limits"><h2>Known limits – honestly</h2>
+<ul>
+<li><b>No Authenticode signature.</b> Scripts are generated in your browser for your selection, so they cannot be code-signed. Release files instead carry GitHub build provenance, and the engine hash is published.</li>
+<li><b>No independent security audit yet.</b> Reviews and audits are very welcome – the code is small and readable.</li>
+<li><b>Young project, single maintainer, built with AI assistance.</b> Everything is public so it can be checked; please report problems.</li>
+<li><b>Not a full lifecycle or enterprise deployment tool.</b> WinMate installs, updates and removes apps and can export a winget import file, but it has no central management, offline mirror or compliance reporting. See the roadmap.</li>
+</ul></section>
+<section id="report"><h2>Report a vulnerability</h2>
+<p>Please report security issues privately via <a href="{repo}/security/advisories/new" rel="noopener">GitHub security advisories</a>, not in public issues. Details are in <a href="{repo}/blob/main/SECURITY.md" rel="noopener">SECURITY.md</a>. Wrong package IDs and other bugs can go to the <a href="{repo}/issues" rel="noopener">issue tracker</a>.</p></section>""",
         "about_title": "How WinMate works",
         "about_meta": "How WinMate installs all your Windows apps with one script and a single admin prompt, which package manager to choose, and answers to common questions.",
         "about_lead": "WinMate turns your app selection into one install script. Here is what happens behind the scenes – and answers to the most common questions.",
@@ -172,6 +242,13 @@ T = {
             "bundle_added": "{name} selected", "bundle_removed": "{name} removed",
             "cleared": "Selection cleared – press U to undo.", "undone": "Selection restored.",
             "all_selected": "{n} visible apps selected", "pm_now": "Package manager: {pm}", "remove_bundle": "Remove {name}",
+            "summary_mode": {"install": "{n} apps · install with {pm}", "upgrade": "{n} apps · update with {pm}", "uninstall": "{n} apps · uninstall with {pm}"},
+            "dry_suffix": " · dry run",
+            "dl_cmd_label": "Download {file}",
+            "warn_uninstall": "Uninstall mode removes the selected apps from this PC.",
+            "warn_pin_scoop": "Scoop cannot pin versions; the latest versions are used.",
+            "warn_pin_missing": "No verified version for: {names} – the latest version is used.",
+            "profile_exported": "Profile saved.", "profile_imported": "Profile loaded: {n} apps.", "profile_invalid": "This file is not a WinMate profile.",
         },
     },
     "de": {
@@ -205,6 +282,75 @@ T = {
         ],
         "keys_dialog_title": "Tastenkürzel",
         "nav_about": "So funktioniert's",
+        "nav_security": "Sicherheit",
+        "toggle_fx": "Animationen an/aus",
+        "sources_title": "Paketquellen",
+        "sources_lead": "WinMate installiert genau diese Pakete. Die Versionen sind die neuesten, die der automatische Katalog-Check am {date} gefunden hat; gepinnte Installationen verwenden sie.",
+        "col_manager": "Paketmanager",
+        "col_package": "Paket",
+        "col_version": "Geprüfte Version",
+        "col_manifest": "Quelle",
+        "manifest_link": "Manifest",
+        "opt_title": "Optionen",
+        "opt_mode": "Was soll das Skript tun?",
+        "mode_install": "Installieren",
+        "mode_upgrade": "Aktualisieren",
+        "mode_uninstall": "Deinstallieren",
+        "opt_dry": "Probelauf – nur anzeigen, was passieren würde, nichts ändern",
+        "opt_restore": "Vorher einen Systemwiederherstellungspunkt erstellen",
+        "opt_pin": "Am {date} geprüfte Versionen festschreiben (winget, Chocolatey)",
+        "opt_proxy": "Proxy (optional, z. B. http://proxy:8080)",
+        "dl_winget_json": "winget-Importdatei",
+        "engine_info": "WinMate {version} · Engine-SHA-256 <code>{sha}</code> · <a href=\"{href}\">So prüfst du das Skript</a>",
+        "profile_title": "Profil",
+        "profile_hint": "Speichere deine Auswahl als Datei und lade sie später wieder – funktioniert auch mit winmate.ps1.",
+        "profile_export": "Exportieren",
+        "profile_import": "Importieren",
+        "security_title": "Sicherheit & Vertrauen",
+        "security_meta": "Was das WinMate-Skript mit Administratorrechten tut, wie Pakete geprüft werden, das Bedrohungsmodell, bekannte Grenzen und wie du ein Skript selbst verifizierst.",
+        "security_lead": "WinMate-Skripte führen Installer mit Administratorrechten aus. Diese Seite erklärt genau, was sie tun, was dich schützt, wo die Grenzen liegen – und wie du alles selbst prüfst, statt uns zu vertrauen.",
+        "security_html": """<section id="what"><h2>Was ein WinMate-Skript tut</h2>
+<ul>
+<li>Es führt nur <code>winget</code>, <code>scoop</code> oder <code>choco</code> für die Pakete aus, die oben im Skript stehen. Diese Liste siehst du vor dem Download in der Vorschau.</li>
+<li>Es fragt <b>einmal</b> nach Administratorrechten. Apps, die keine Adminrechte vertragen, laufen über eine temporäre geplante Aufgabe als normaler Benutzer; die Aufgabe wird danach gelöscht.</li>
+<li>Es lädt nichts von WinMate herunter. Die Installer kommen von den Herstellern, wie in den Paket-Manifesten beschrieben.</li>
+<li>Es schreibt Protokolle und einen Lauf-Datensatz nach <code>%LOCALAPPDATA%\\WinMate</code> und nach der Installation ein Undo-Skript, das nur die in diesem Lauf neu installierten Apps entfernt.</li>
+<li>Es gibt keine Telemetrie. Die Website speichert deine Auswahl nur in deinem Browser (<a href="{privacy}">Datenschutz</a>).</li>
+</ul></section>
+<section id="verify"><h2>Ein Skript verifizieren</h2>
+<dl class="ids"><dt>Aktuelle Version</dt><dd>{version}</dd><dt>Engine-SHA-256</dt><dd><code>{sha}</code></dd><dt>Gebaut aus Commit</dt><dd><a href="{commit_url}" rel="noopener"><code>{commit}</code></a></dd></dl>
+<p>Jedes erzeugte Skript besteht aus einem kurzen Konfigurationsblock (deine Apps) und der Engine, die für alle identisch ist. So prüfst du, dass niemand die Engine verändert hat:</p>
+<ol>
+<li>Lade <code>winmate.ps1</code> aus dem <a href="{repo}/releases/latest" rel="noopener">neuesten GitHub-Release</a>. Releases werden von öffentlichen GitHub Actions gebaut und tragen einen Herkunftsnachweis (Build Provenance): <code>gh attestation verify winmate.ps1 --repo baba537/WinMate</code></li>
+<li>Führe <code>.\\winmate.ps1 -Verify .\\WinMate-Install.cmd</code> aus. Es zeigt die Apps, die das Skript installiert, und meldet nur dann <b>OK</b>, wenn die Engine zum veröffentlichten Hash passt.</li>
+<li>Oder vergleiche den Engine-Block von Hand mit <a href="{repo}/blob/main/src/ps/engine.ps1" rel="noopener">src/ps/engine.ps1</a>. Die Website wird reproduzierbar aus dem Repository gebaut, jeder kann sie nachbauen und vergleichen (<code>build-info.json</code> enthält die Hashes).</li>
+</ol>
+<p>Du willst erst gar nichts ausführen? Nutze zuerst den <b>Probelauf</b>: Er zeigt nur, was installiert würde.</p></section>
+<section id="packages"><h2>Wie Pakete geprüft werden</h2>
+<ul>
+<li><b>winget</b>: Manifeste in <a href="https://github.com/microsoft/winget-pkgs" rel="noopener">microsoft/winget-pkgs</a> werden von Microsoft vor der Veröffentlichung validiert und gescannt. winget prüft den SHA-256-Hash jedes Installers gegen das Manifest und führt abweichende Dateien nicht aus. Store-Apps liefert der Microsoft Store.</li>
+<li><b>Chocolatey</b>: Community-Pakete werden moderiert und auf Viren gescannt; heruntergeladene Installer brauchen Prüfsummen.</li>
+<li><b>Scoop</b>: Manifeste enthalten Hashes, die Scoop nach dem Download prüft; Buckets ändern sich nur über geprüfte Pull Requests.</li>
+<li><b>WinMate</b>: Ein geplanter Job prüft jede Woche alle Paket-IDs gegen die offiziellen Indizes (letzte Prüfung: {checked}) und speichert die neuesten Versionen. Skripte nutzen exakte IDs (<code>--exact</code>) und eine feste Quelle, können diese geprüften Versionen festschreiben und als Probelauf laufen.</li>
+</ul></section>
+<section id="threats"><h2>Bedrohungsmodell</h2>
+<div class="table-wrap"><table class="compare"><thead><tr><th scope="col">Bedrohung</th><th scope="col">Schutzmaßnahme</th><th scope="col">Restrisiko</th></tr></thead><tbody>
+<tr><th scope="row">Website oder Hosting werden kompromittiert und liefern ein verändertes Skript</th><td>Open Source, reproduzierbarer Build in öffentlicher CI, Skriptvorschau, Engine-Hash mit <code>-Verify</code> gegen ein nachweislich gebautes Release, strenge Content-Security-Policy</td><td>Nutzer, die Skripte ungeprüft ausführen</td></tr>
+<tr><th scope="row">Eine Paketquelle oder ein Manifest wird kompromittiert</th><td>Prüfung, Scans und Hash-Kontrollen durch winget, Chocolatey und Scoop; optionales Festschreiben von Versionen; Probelauf</td><td>WinMate kann kein bösartiges Paket erkennen, das das Upstream-Repository akzeptiert hat</td></tr>
+<tr><th scope="row">Eine falsche oder bösartige Paket-ID gelangt in den Katalog</th><td>Review von Pull Requests, CI-Prüfung gegen die offiziellen Indizes, IDs auf jeder App-Seite und im Skript sichtbar</td><td>Ein Reviewer übersieht eine ähnlich aussehende ID</td></tr>
+<tr><th scope="row">Typosquatting und mehrdeutige Namen</th><td>Exakte Paket-IDs (<code>--exact</code>) und feste Quelle (<code>--source winget</code>) statt Namenssuche</td><td>Gering</td></tr>
+<tr><th scope="row">Missbrauch der Administratorsitzung</th><td>Nur eine Rechteerhöhung für die aufgelisteten Pakete; keine Dienste, keine dauerhaften Aufgaben; temporäre Dateien werden gelöscht</td><td>Installer selbst laufen mit vollen Rechten – das liegt in der Natur von Softwareinstallationen</td></tr>
+<tr><th scope="row">Eine Installation geht schief</th><td>Optionaler Wiederherstellungspunkt, Lauf-Datensatz, Undo-Skript für neu installierte Apps, Wiederholung, ausführliche Logs</td><td>Undo kann Änderungen außerhalb des jeweiligen Deinstallers nicht zurücknehmen</td></tr>
+</tbody></table></div></section>
+<section id="limits"><h2>Bekannte Grenzen – ehrlich gesagt</h2>
+<ul>
+<li><b>Keine Authenticode-Signatur.</b> Skripte werden in deinem Browser für deine Auswahl erzeugt und können daher nicht signiert werden. Release-Dateien haben stattdessen einen GitHub-Herkunftsnachweis, und der Engine-Hash ist veröffentlicht.</li>
+<li><b>Noch kein unabhängiges Sicherheitsaudit.</b> Reviews und Audits sind sehr willkommen – der Code ist klein und gut lesbar.</li>
+<li><b>Junges Projekt, ein Maintainer, mit KI-Unterstützung gebaut.</b> Alles ist öffentlich und damit überprüfbar; bitte melde Probleme.</li>
+<li><b>Kein vollständiges Lifecycle- oder Enterprise-Deployment-Tool.</b> WinMate installiert, aktualisiert und entfernt Apps und exportiert winget-Importdateien, hat aber keine zentrale Verwaltung, keinen Offline-Spiegel und kein Compliance-Reporting. Siehe Roadmap.</li>
+</ul></section>
+<section id="report"><h2>Sicherheitslücke melden</h2>
+<p>Bitte melde Sicherheitsprobleme vertraulich über <a href="{repo}/security/advisories/new" rel="noopener">GitHub Security Advisories</a>, nicht in öffentlichen Issues. Details stehen in <a href="{repo}/blob/main/SECURITY.md" rel="noopener">SECURITY.md</a>. Falsche Paket-IDs und andere Fehler gehören in den <a href="{repo}/issues" rel="noopener">Issue-Tracker</a>.</p></section>""",
         "about_title": "So funktioniert WinMate",
         "about_meta": "Wie WinMate alle Windows-Programme mit einem Skript und nur einer Admin-Abfrage installiert, welcher Paketmanager passt und Antworten auf häufige Fragen.",
         "about_lead": "WinMate macht aus deiner App-Auswahl ein einziges Installationsskript. Hier siehst du, was dabei passiert – und Antworten auf die häufigsten Fragen.",
@@ -334,6 +480,13 @@ T = {
             "bundle_added": "{name} ausgewählt", "bundle_removed": "{name} entfernt",
             "cleared": "Auswahl geleert – U drücken zum Rückgängigmachen.", "undone": "Auswahl wiederhergestellt.",
             "all_selected": "{n} sichtbare Apps ausgewählt", "pm_now": "Paketmanager: {pm}", "remove_bundle": "{name} entfernen",
+            "summary_mode": {"install": "{n} Apps · Installation mit {pm}", "upgrade": "{n} Apps · Aktualisierung mit {pm}", "uninstall": "{n} Apps · Deinstallation mit {pm}"},
+            "dry_suffix": " · Probelauf",
+            "dl_cmd_label": "{file} herunterladen",
+            "warn_uninstall": "Im Deinstallationsmodus werden die ausgewählten Apps von diesem PC entfernt.",
+            "warn_pin_scoop": "Scoop kann keine Versionen festschreiben; es werden die neuesten Versionen verwendet.",
+            "warn_pin_missing": "Keine geprüfte Version für: {names} – es wird die neueste Version verwendet.",
+            "profile_exported": "Profil gespeichert.", "profile_imported": "Profil geladen: {n} Apps.", "profile_invalid": "Diese Datei ist kein WinMate-Profil.",
         },
     },
 }
@@ -358,6 +511,10 @@ FAQ = {
          "Simply run the script again – already installed apps are skipped. Some failures are temporary (for example when a vendor has just released a new version). The full log is saved to <code>%TEMP%\\WinMate-install.log</code>. If a package ID is wrong, please open an issue on GitHub."),
         ("How do I update all apps later?",
          "Run <code>winget upgrade --all</code>, <code>scoop update *</code> or <code>choco upgrade all -y</code> in PowerShell, depending on the package manager you used."),
+        ("Can I preview, update or uninstall apps with WinMate?",
+         "Yes. In the script dialog choose <b>Install</b>, <b>Update</b> or <b>Uninstall</b>, and tick <b>Dry run</b> to only see what would happen. After an installation WinMate saves an undo script in <code>%LOCALAPPDATA%\\WinMate\\runs</code> that removes exactly the apps that run added. The command-line version <code>winmate.ps1</code> offers the same options."),
+        ("How can I check that a script was not tampered with?",
+         "Every script contains the same engine, whose SHA-256 hash is published on the <a href=\"../security/#verify\">security page</a> and in each GitHub release. Run <code>winmate.ps1 -Verify WinMate-Install.cmd</code> to compare it and to list the apps the script will install."),
         ("Does WinMate collect any data?",
          "No. There are no cookies, no analytics and no accounts. Your selection is only stored in your own browser (localStorage) and can be shared via a link that contains the app names."),
     ],
@@ -380,6 +537,10 @@ FAQ = {
          "Führe das Skript einfach noch einmal aus – bereits installierte Apps werden übersprungen. Manche Fehler sind vorübergehend, etwa wenn ein Hersteller gerade eine neue Version veröffentlicht hat. Das vollständige Protokoll liegt unter <code>%TEMP%\\WinMate-install.log</code>. Ist eine Paket-ID falsch, melde es bitte auf GitHub."),
         ("Wie aktualisiere ich später alle Apps?",
          "Führe in PowerShell je nach Paketmanager <code>winget upgrade --all</code>, <code>scoop update *</code> oder <code>choco upgrade all -y</code> aus."),
+        ("Kann ich mit WinMate Apps vorab prüfen, aktualisieren oder deinstallieren?",
+         "Ja. Wähle im Skript-Dialog <b>Installieren</b>, <b>Aktualisieren</b> oder <b>Deinstallieren</b> und hake <b>Probelauf</b> an, um nur zu sehen, was passieren würde. Nach einer Installation speichert WinMate unter <code>%LOCALAPPDATA%\\WinMate\\runs</code> ein Undo-Skript, das genau die in diesem Lauf hinzugefügten Apps entfernt. Die Kommandozeilen-Version <code>winmate.ps1</code> bietet dieselben Optionen."),
+        ("Wie prüfe ich, dass ein Skript nicht manipuliert wurde?",
+         "Jedes Skript enthält dieselbe Engine, deren SHA-256-Hash auf der <a href=\"../security/#verify\">Sicherheitsseite</a> und in jedem GitHub-Release veröffentlicht ist. Mit <code>winmate.ps1 -Verify WinMate-Install.cmd</code> vergleichst du ihn und siehst, welche Apps das Skript installiert."),
         ("Sammelt WinMate Daten?",
          "Nein. Es gibt keine Cookies, keine Analyse-Tools und keine Konten. Deine Auswahl wird nur in deinem eigenen Browser (localStorage) gespeichert und lässt sich per Link teilen, der die App-Namen enthält."),
     ],

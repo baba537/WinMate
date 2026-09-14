@@ -1,0 +1,54 @@
+name: Release
+
+# Push a tag like v2.2.0 to publish a release. All files are built by this public workflow
+# and get a signed build provenance attestation (verify with `gh attestation verify`).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check tag matches VERSION
+        run: test "v$(cat VERSION)" = "${GITHUB_REF_NAME}"
+      - name: Build
+        run: |
+          python build.py
+          python tools/check_site.py
+      - name: Collect release files
+        run: |
+          mkdir release
+          cp dist/winmate.ps1 dist/engine.ps1 dist/build-info.json dist/apps.json release/
+          (cd dist && zip -qr "../release/winmate-site-${GITHUB_REF_NAME}.zip" .)
+          (cd release && sha256sum * > SHA256SUMS)
+          cat release/SHA256SUMS
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "release/*"
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {found=1; next} found && /^## \[/ {exit} found {print}' CHANGELOG.md > notes.md
+          {
+            echo ""
+            echo "**Engine SHA-256:** \`$(python -c 'import json;print(json.load(open("dist/build-info.json"))["engineSha256"])')\`"
+            echo ""
+            echo "Verify a downloaded file: \`gh attestation verify winmate.ps1 --repo ${GITHUB_REPOSITORY}\`"
+          } >> notes.md
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" release/* --title "WinMate ${GITHUB_REF_NAME}" --notes-file notes.md

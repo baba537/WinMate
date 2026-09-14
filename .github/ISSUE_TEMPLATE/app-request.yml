@@ -1,0 +1,27 @@
+name: Suggest an app or bundle
+description: Propose a new app or a change to a bundle.
+labels: ["app-request"]
+body:
+  - type: markdown
+    attributes:
+      value: Please check the [catalog policy](https://github.com/baba537/WinMate/blob/main/docs/catalog-policy.md) first.
+  - type: input
+    id: name
+    attributes:
+      label: App name and website
+    validations:
+      required: true
+  - type: textarea
+    id: ids
+    attributes:
+      label: Package IDs
+      description: Whatever you know – e.g. from `winget search`, `scoop search` or community.chocolatey.org
+      placeholder: |
+        winget: Vendor.App
+        scoop: extras/app
+        choco: app
+  - type: textarea
+    id: why
+    attributes:
+      label: Why should it be in WinMate?
+      description: Category, suitable bundle, who uses it.

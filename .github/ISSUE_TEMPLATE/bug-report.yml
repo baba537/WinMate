@@ -1,0 +1,28 @@
+name: Bug report
+description: Something on the website, in the script or in winmate.ps1 does not work.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options: [Website, Generated script, winmate.ps1 CLI, Documentation]
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Output or log
+      description: Summary output or the log file from `%LOCALAPPDATA%\WinMate\logs`. Remove personal data.
+      render: text
+  - type: input
+    id: env
+    attributes:
+      label: Windows version / browser

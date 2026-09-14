@@ -9,6 +9,8 @@
 Usage:
   python tools/validate_packages.py            # report problems, exit code 1 if something is missing
   python tools/validate_packages.py --elevation  # also read winget manifests and report ElevationRequirement
+  python tools/validate_packages.py --write-versions --report report.md
+      stores the latest verified versions in data/versions.json and writes a Markdown report (scheduled CI job)
 
 Standard library only. Downloads are cached in .cache/ for one day.
 """
@@ -76,7 +78,9 @@ def choco_package(pid):
                 return None
             title = re.search(r"<d:Title>(.*?)</d:Title>", x)
             published = re.search(r"<d:Published[^>]*>(.*?)</d:Published>", x)
-            return {"title": title.group(1) if title else "", "published": (published.group(1) if published else "")[:10]}
+            version = re.search(r"<d:Version>(.*?)</d:Version>", x)
+            return {"title": title.group(1) if title else "", "published": (published.group(1) if published else "")[:10],
+                    "version": version.group(1) if version else None}
         except Exception as e:  # network hiccup, retry
             err = e
             time.sleep(2)
@@ -105,6 +109,7 @@ def main():
 
     problems = 0
     warnings = 0
+    lines = []
     for a in apps:
         msgs = []
         ids = a.get("winget") or []
@@ -136,6 +141,7 @@ def main():
                 msgs.append(("warn", f"chocolatey package last published {info['published']}: {a['choco']}"))
         for level, msg in msgs:
             print(f"[{level.upper():5}] {a['id']:24} {msg}")
+            lines.append(f"| {level} | `{a['id']}` | {msg} |")
             problems += level == "error"
             warnings += level == "warn"
 
@@ -148,12 +154,32 @@ def main():
                 app = next(a for a in apps if wid in ([a["winget"]] if isinstance(a.get("winget"), str) else a.get("winget") or []))
                 if "elevationProhibited" in elev and not app.get("noAdmin"):
                     print(f"[ERROR] {app['id']:24} {wid} is elevationProhibited: set \"noAdmin\": true")
+                    lines.append(f"| error | `{app['id']}` | {wid} is elevationProhibited: set noAdmin |")
                     problems += 1
                 elif app.get("noAdmin") and "elevationProhibited" not in elev:
                     print(f"[WARN ] {app['id']:24} noAdmin is set but manifest says {elev or 'nothing'}")
+                    lines.append(f"| warn | `{app['id']}` | noAdmin is set but the manifest says {elev or 'nothing'} |")
                     warnings += 1
 
-    print(f"\n{len(apps)} apps checked: {problems} error(s), {warnings} warning(s)")
+    summary = f"{len(apps)} apps checked: {problems} error(s), {warnings} warning(s)"
+    print(f"\n{summary}")
+
+    if "--write-versions" in sys.argv:
+        all_winget = {w for a in apps for w in ([a["winget"]] if isinstance(a.get("winget"), str) else a.get("winget") or [])}
+        snapshot = {
+            "checked": time.strftime("%Y-%m-%d", time.gmtime()),
+            "winget": {w: wg[w][1] for w in sorted(all_winget) if w in wg},
+            "choco": {c: info["version"] for c, info in sorted(choco.items()) if info and info.get("version")},
+        }
+        (ROOT / "data" / "versions.json").write_text(json.dumps(snapshot, indent=1) + "\n", encoding="utf-8", newline="\n")
+        print(f"Wrote data/versions.json ({len(snapshot['winget'])} winget and {len(snapshot['choco'])} Chocolatey versions)")
+
+    if "--report" in sys.argv:
+        report = Path(sys.argv[sys.argv.index("--report") + 1])
+        body = ["## WinMate catalog check", "", summary, ""]
+        if lines:
+            body += ["| Level | App | Problem |", "|---|---|---|"] + lines
+        report.write_text("\n".join(body) + "\n", encoding="utf-8")
     return 1 if problems else 0
 
 

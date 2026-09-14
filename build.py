@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 import pixel
@@ -28,7 +29,28 @@ REPO_URL = "https://github.com/baba537/WinMate"
 LANGS = ("en", "de")
 PMS = ("winget", "scoop", "choco")
 PM_LABEL = {"winget": "winget", "scoop": "Scoop", "choco": "Chocolatey"}
-TODAY = dt.date.today().isoformat()
+
+
+def _git(*args):
+    try:
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+    except Exception:
+        return ""
+
+
+# Reproducible builds: every date and version in the output comes from the commit, not from the clock.
+WINMATE_VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+_EPOCH = os.environ.get("SOURCE_DATE_EPOCH") or _git("log", "-1", "--format=%ct")
+BUILD_DATE = dt.datetime.fromtimestamp(int(_EPOCH), dt.timezone.utc) if _EPOCH else dt.datetime.now(dt.timezone.utc)
+TODAY = BUILD_DATE.date().isoformat()
+COMMIT = os.environ.get("GITHUB_SHA") or os.environ.get("WORKERS_CI_COMMIT_SHA") or _git("rev-parse", "HEAD") or "unknown"
+SCOOP_REPOS = {
+    "main": "ScoopInstaller/Main", "extras": "ScoopInstaller/Extras", "versions": "ScoopInstaller/Versions",
+    "java": "ScoopInstaller/Java", "nonportable": "ScoopInstaller/Nonportable", "games": "Calinou/scoop-games",
+}
+# Inline boot script (theme + animation preference) – its hash is allowed in the Content-Security-Policy.
+BOOT_JS = ("try{var d=document.documentElement,t=localStorage.getItem('wm-theme');if(t)d.dataset.theme=t;"
+           "if(localStorage.getItem('wm-fx')==='off')d.dataset.fx='off'}catch(e){}")
 
 esc = html.escape
 
@@ -54,7 +76,33 @@ def load_data():
         for aid in p["apps"]:
             assert aid in app_ids, f"preset {p['id']}: unknown app {aid}"
     by_cat = {c["id"]: [a for a in apps if a["category"] == c["id"]] for c in cats}
+    versions_file = DATA / "versions.json"
+    versions = json.loads(versions_file.read_text(encoding="utf-8")) if versions_file.exists() else {}
+    for a in apps:
+        a["wv"] = {w: versions.get("winget", {}).get(w) for w in a["winget"] if not w.startswith("msstore:") and versions.get("winget", {}).get(w)}
+        a["cv"] = versions.get("choco", {}).get(a.get("choco")) if a.get("choco") else None
+    VERSIONS_CHECKED.update(checked=versions.get("checked"))
     return apps, cats, presets, by_cat
+
+
+VERSIONS_CHECKED = {}
+
+
+def package_sources(app):
+    """(manager, package, verified version, manifest URL) for every package of an app."""
+    out = []
+    for wid in app["winget"]:
+        if wid.startswith("msstore:"):
+            out.append(("winget · Microsoft Store", wid[8:], None, f"https://apps.microsoft.com/detail/{wid[8:]}"))
+        else:
+            path = wid.replace(".", "/")
+            out.append(("winget", wid, app["wv"].get(wid), f"https://github.com/microsoft/winget-pkgs/tree/master/manifests/{wid[0].lower()}/{path}"))
+    if app.get("scoop"):
+        bucket, name = app["scoop"].split("/", 1)
+        out.append(("Scoop", app["scoop"], None, f"https://github.com/{SCOOP_REPOS[bucket]}/blob/master/bucket/{name}.json"))
+    if app.get("choco"):
+        out.append(("Chocolatey", app["choco"], app["cv"], f"https://community.chocolatey.org/packages/{app['choco']}"))
+    return out
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -105,6 +153,7 @@ ICONS = {
     "search": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 2h8v2H4zM2 4h2v8H2zM12 4h2v8h-2zM4 12h8v2H4zM14 14h2v2h-2zM16 16h2v2h-2zM18 18h2v2h-2zM20 20h2v2h-2z"/></svg>',
     "copy": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 2h12v2H8zM20 4h2v12h-2zM6 4h2v2H6zM2 8h12v2H2zM2 10h2v12H2zM4 20h10v2H4zM14 10h2v12h-2zM18 16h2v2h-2z"/></svg>',
     "download": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 2h2v12h-2zM7 10h2v2H7zM15 10h2v2h-2zM9 12h2v2H9zM13 12h2v2h-2zM3 16h2v4H3zM19 16h2v4h-2zM5 20h14v2H5z"/></svg>',
+    "fx": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 2h2v4h-2zM11 18h2v4h-2zM2 11h4v2H2zM18 11h4v2h-4zM5 5h2v2H5zM17 5h2v2h-2zM5 17h2v2H5zM17 17h2v2h-2zM9 9h6v6H9z"/></svg>',
     "external": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14 2h8v8h-2V6h-2V4h-4zM16 6h2v2h-2zM14 8h2v2h-2zM12 10h2v2h-2zM2 4h8v2H4v14h14v-6h2v8H2z"/></svg>',
 }
 
@@ -153,7 +202,7 @@ def head(lang, *, title, description, path, alt_path=None, og_type="website", ex
         f'<link rel="preload" href="{asset("fonts/silkscreen-400.woff2")}" as="font" type="font/woff2" crossorigin>',
         f'<link rel="stylesheet" href="{asset("css/style.css")}">',
         # Apply the saved theme before first paint to avoid a flash.
-        "<script>try{var t=localStorage.getItem('wm-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>",
+        f"<script>{BOOT_JS}</script>",
         f'<script src="{asset("js/app.js")}" defer></script>',
         f'<link rel="alternate" type="text/plain" title="LLM summary" href="{SITE_URL}/llms.txt">',
     ]
@@ -178,11 +227,13 @@ def header(lang, alt_path, home_page=False):
     <nav class="nav" aria-label="{t['nav_label']}">
       <a href="{home}#apps">{t['nav_apps']}</a>
       <a href="{url(lang, 'about/')}">{t['nav_about']}</a>
+      <a href="{url(lang, 'security/')}">{t['nav_security']}</a>
       <a href="{url(lang, 'about/')}#faq">FAQ</a>
     </nav>
     <div class="header-actions">
       {help_btn}
       <a class="btn-ghost lang-switch" href="{url(other, alt_path)}" hreflang="{other}" lang="{other}" title="{T[other]['lang_name']}">{other.upper()}</a>
+      <button class="icon-btn" type="button" data-fx-toggle aria-label="{t['toggle_fx']}" title="{t['toggle_fx']}">{ICONS['fx']}</button>
       <button class="icon-btn" type="button" data-theme-toggle aria-label="{t['toggle_theme']}" title="{t['toggle_theme']}">{ICONS['theme']}</button>
       <a class="icon-btn" href="{REPO_URL}" rel="noopener" aria-label="GitHub" title="GitHub">{ICONS['github']}</a>
     </div>
@@ -208,12 +259,15 @@ def footer(lang, cats, presets):
         <li><a href="{REPO_URL}" rel="noopener">GitHub</a></li>
         <li><a href="{REPO_URL}/issues" rel="noopener">{t['footer_report']}</a></li>
         <li><a href="{url(lang, 'about/')}">{t['nav_about']}</a></li>
+        <li><a href="{url(lang, 'security/')}">{t['nav_security']}</a></li>
+        <li><a href="{REPO_URL}/blob/main/CHANGELOG.md" rel="noopener">Changelog</a> · <a href="{REPO_URL}/blob/main/docs/ROADMAP.md" rel="noopener">Roadmap</a></li>
+        <li><a href="/winmate.ps1">winmate.ps1 (CLI)</a></li>
         <li><a href="{url(lang, 'privacy/')}">{t['privacy']}</a></li>
         <li><a href="/llms.txt">llms.txt</a> · <a href="/apps.json">apps.json</a></li>
       </ul>
     </nav>
   </div>
-  <div class="wrap footer-bottom muted small">© {dt.date.today().year} WinMate · MIT License · {t['footer_made']} · {t['footer_inspired']}</div>
+  <div class="wrap footer-bottom muted small">© {BUILD_DATE.year} WinMate · <a href="{REPO_URL}/blob/main/CHANGELOG.md" rel="noopener">v{WINMATE_VERSION}</a> · MIT License · {t['footer_inspired']}</div>
 </footer>"""
 
 
@@ -260,6 +314,10 @@ def card(lang, app):
         attrs.append(f'data-choco="{esc(app["choco"])}"')
     if app.get("noAdmin"):
         attrs.append("data-noadmin")
+    if app["wv"]:
+        attrs.append(f'data-wv="{esc(",".join(app["wv"].get(w, "") for w in app["winget"]))}"')
+    if app.get("cv"):
+        attrs.append(f'data-cv="{esc(app["cv"])}"')
     badges = "".join(f'<span class="pm-dot pm-{pm}" title="{PM_LABEL[pm]}"></span>' for pm in PMS if (app["winget"] if pm == "winget" else app.get(pm)))
     return (
         f'<li class="card" {" ".join(attrs)}>'
@@ -374,6 +432,15 @@ def home_page(lang, apps, cats, presets, by_cat):
           <h2 class="panel-title">{t['footer_categories']}</h2>
           <ul>{cat_nav}</ul>
         </nav>
+        <div class="panel profile-panel">
+          <h2 class="panel-title">{t['profile_title']}</h2>
+          <p class="small muted">{t['profile_hint']}</p>
+          <div class="profile-actions">
+            <button type="button" class="btn-small" id="profileExport">{ICONS['download']}<span>{t['profile_export']}</span></button>
+            <label class="btn-small" for="profileImport">{ICONS['copy']}<span>{t['profile_import']}</span></label>
+            <input type="file" id="profileImport" accept="application/json,.json" hidden>
+          </div>
+        </div>
         <div class="panel keys-panel">
           <h2 class="panel-title">{t['keys_title']}</h2>
           <ul class="keys">{keys_short}</ul>
@@ -416,13 +483,27 @@ def home_page(lang, apps, cats, presets, by_cat):
   <form method="dialog" class="dialog-close-form"><button class="icon-btn dialog-close" aria-label="{t['close']}">✕</button></form>
   <h2 id="dlg-title">{t['dlg_title']}</h2>
   <p class="muted" id="dlgSummary"></p>
+  <fieldset class="dlg-options">
+    <legend>{t['opt_title']}</legend>
+    <div class="segmented seg-mode" role="radiogroup" aria-label="{t['opt_mode']}">
+      <button type="button" role="radio" aria-checked="true" data-mode="install">{t['mode_install']}</button>
+      <button type="button" role="radio" aria-checked="false" data-mode="upgrade">{t['mode_upgrade']}</button>
+      <button type="button" role="radio" aria-checked="false" data-mode="uninstall">{t['mode_uninstall']}</button>
+    </div>
+    <label class="toggle"><input type="checkbox" id="optDry"><span>{t['opt_dry']}</span></label>
+    <label class="toggle"><input type="checkbox" id="optRestore"><span>{t['opt_restore']}</span></label>
+    <label class="toggle"><input type="checkbox" id="optPin"><span>{t['opt_pin'].format(date=VERSIONS_CHECKED.get('checked') or '–')}</span></label>
+    <label class="opt-proxy"><span>{t['opt_proxy']}</span><input type="text" id="optProxy" inputmode="url" autocomplete="off" spellcheck="false" placeholder="http://proxy:8080"></label>
+  </fieldset>
   <ul class="dlg-warnings" id="dlgWarnings"></ul>
   <div class="dlg-actions">
-    <button type="button" class="btn btn-primary" id="dlCmd">{ICONS['download']}<span>{t['dl_cmd']}</span> <kbd>D</kbd></button>
+    <button type="button" class="btn btn-primary" id="dlCmd">{ICONS['download']}<span id="dlCmdLabel">{t['dl_cmd']}</span> <kbd>D</kbd></button>
     <button type="button" class="btn" id="copyPs">{ICONS['copy']}<span>{t['copy_ps']}</span> <kbd>Y</kbd></button>
     <button type="button" class="btn-ghost" id="dlPs">{t['dl_ps1']}</button>
+    <button type="button" class="btn-ghost" id="dlWingetJson">{t['dl_winget_json']}</button>
     <button type="button" class="btn-ghost" id="copyLink">{t['copy_link']}</button>
   </div>
+  <p class="engine-info small muted">{t['engine_info'].format(version=WINMATE_VERSION, sha=ENGINE_INFO['sha'][:16] + '…', href=url(lang, 'security/') + '#verify')}</p>
   <ol class="dlg-steps">{''.join(f'<li>{s}</li>' for s in t['run_steps'])}</ol>
   <details class="dlg-script"><summary>{t['show_script']}</summary><pre><code id="scriptPreview"></code></pre></details>
 </dialog>
@@ -568,6 +649,12 @@ def app_page(lang, app, apps, cats, presets, by_cat):
     {command_block(lang, app)}
     <h2>{t['package_ids']}</h2>
     <dl class="ids"><dt>{t['category']}</dt><dd><a href="{url(lang, 'category/' + cat['id'] + '/')}">{esc(cat[lang]['name'])}</a></dd>{''.join(ids)}</dl>
+    <h2>{t['sources_title']}</h2>
+    <p class="muted">{t['sources_lead'].format(date=VERSIONS_CHECKED.get('checked') or '–')}</p>
+    <div class="table-wrap"><table class="compare sources">
+      <thead><tr><th scope="col">{t['col_manager']}</th><th scope="col">{t['col_package']}</th><th scope="col">{t['col_version']}</th><th scope="col">{t['col_manifest']}</th></tr></thead>
+      <tbody>{''.join(f'<tr><td>{esc(m)}</td><td><code>{esc(pkg)}</code></td><td>{esc(ver or "–")}</td><td><a href="{esc(link)}" rel="noopener nofollow">{t["manifest_link"]}</a></td></tr>' for m, pkg, ver, link in package_sources(app))}</tbody>
+    </table></div>
     <div class="callout">
       <h2>{t['bulk_title'].format(name=esc(app['name']))}</h2>
       <p>{t['bulk_text']}</p>
@@ -697,12 +784,15 @@ def llms_full_txt(apps, cats, by_cat):
 
 def apps_json(apps, cats):
     return json.dumps({
-        "generated": TODAY, "site": SITE_URL, "source": REPO_URL,
+        "generated": TODAY, "version": WINMATE_VERSION, "commit": COMMIT, "versionsChecked": VERSIONS_CHECKED.get("checked"),
+        "site": SITE_URL, "source": REPO_URL,
         "categories": [{"id": c["id"], "name": c["en"]["name"], "name_de": c["de"]["name"]} for c in cats],
         "apps": [{
             "id": a["id"], "name": a["name"], "category": a["category"], "homepage": a["homepage"],
             "winget": a["winget"], "scoop": a.get("scoop"), "choco": a.get("choco"),
             "noAdmin": bool(a.get("noAdmin")), "description": a["description"],
+            "verifiedVersions": {"winget": a["wv"], "choco": a["cv"]},
+            "sources": [{"manager": m, "package": p, "version": v, "manifest": u} for m, p, v, u in package_sources(a)],
             "icon": f"{SITE_URL}/icons/{a['iconFile']}", "url": f"{SITE_URL}/apps/{a['id']}/",
         } for a in apps],
     }, ensure_ascii=False, indent=1)
@@ -721,6 +811,52 @@ def sitemap(paths):
                 f'<xhtml:link rel="alternate" hreflang="x-default" href="{en}"/></url>')
     return ('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
             'xmlns:xhtml="http://www.w3.org/1999/xhtml">\n' + "\n".join(entries) + "\n</urlset>\n")
+
+
+# ----------------------------------------------------------------------------- engine, CLI, security
+ENGINE_INFO = {}
+
+
+def engine_text():
+    """The PowerShell engine exactly as embedded in every script (its SHA-256 is published)."""
+    text = (SRC / "ps" / "engine.ps1").read_text(encoding="utf-8").replace("\r\n", "\n")
+    text = text.replace("https://winmate.baba537.workers.dev", SITE_URL).replace("__WINMATE_VERSION__", WINMATE_VERSION).rstrip()
+    assert text.isascii(), "engine.ps1 must be ASCII so its hash is identical on every system"
+    return text
+
+
+def cli_script(apps, presets, engine, engine_sha):
+    catalog = {
+        "apps": [{
+            "id": a["id"], "name": a["name"], "category": a["category"], "description": a["description"]["en"],
+            "winget": a["winget"], "scoop": a.get("scoop"), "choco": a.get("choco"), "noAdmin": bool(a.get("noAdmin")),
+            "wv": a["wv"], "cv": a["cv"],
+        } for a in apps],
+        "bundles": [{"id": p["id"], "name": p["en"]["name"], "apps": p["apps"]} for p in presets],
+    }
+    cli = (SRC / "ps" / "cli.ps1").read_text(encoding="utf-8").replace("\r\n", "\n")
+    for key, value in {"__WINMATE_VERSION__": WINMATE_VERSION, "__ENGINE_SHA256__": engine_sha, "__SITE_URL__": SITE_URL}.items():
+        cli = cli.replace(key, value)
+    catalog_json = json.dumps(catalog, ensure_ascii=True, separators=(",", ":"))
+    assert "'@" not in catalog_json and "\n'@" not in engine
+    return cli.replace("__CATALOG_JSON__", catalog_json).replace("__ENGINE_TEXT__", engine)
+
+
+def security_page(lang, cats, presets):
+    t = T[lang]
+    nav, bc_ld = breadcrumbs(lang, [("WinMate", ""), (t["security_title"], None)])
+    commit_short = COMMIT[:12]
+    html_body = t["security_html"].format(
+        version=WINMATE_VERSION, sha=ENGINE_INFO["sha"], commit=commit_short, repo=REPO_URL, site=SITE_URL,
+        commit_url=f"{REPO_URL}/commit/{COMMIT}" if COMMIT != "unknown" else REPO_URL,
+        privacy=url(lang, "privacy/"), checked=VERSIONS_CHECKED.get("checked") or "–")
+    body = f"""<div class="wrap page about prose security">
+  {nav}
+  <header class="list-hero"><h1>{t['security_title']}</h1><p class="lead">{t['security_lead']}</p></header>
+  {html_body}
+</div>"""
+    return page(lang, body, title=f"{t['security_title']} | WinMate", description=t["security_meta"], path="security/",
+                cats=cats, presets=presets, extra_ld=[bc_ld])
 
 
 # ----------------------------------------------------------------------------- assets
@@ -760,17 +896,23 @@ def build():
     for f in ("fonts/silkscreen-400.woff2", "fonts/silkscreen-700.woff2"):
         css = css.replace(f"../{f}", "/" + ASSETS[f])
     hashed_copy("css/style.css", css.encode("utf-8"))
-    engine = (SRC / "ps" / "engine.ps1").read_text(encoding="utf-8").replace("https://winmate.baba537.workers.dev", SITE_URL)
+    engine = engine_text()
+    engine_sha = hashlib.sha256(engine.encode("utf-8")).hexdigest()
+    ENGINE_INFO.update(sha=engine_sha)
     js = (SRC / "js" / "app.js").read_text(encoding="utf-8")
-    js = js.replace('"__ENGINE__"', json.dumps(engine)).replace('"__SITE_URL__"', json.dumps(SITE_URL))
+    for key, value in {"__ENGINE__": engine, "__SITE_URL__": SITE_URL, "__ENGINE_SHA256__": engine_sha, "__WINMATE_VERSION__": WINMATE_VERSION}.items():
+        js = js.replace(json.dumps(key), json.dumps(value))
     hashed_copy("js/app.js", js.encode("utf-8"))
+    write("engine.ps1", engine + "\n")
+    write("winmate.ps1", cli_script(apps, presets, engine, engine_sha))
 
-    paths = [("", "1.0"), ("about/", "0.7")]
+    paths = [("", "1.0"), ("about/", "0.7"), ("security/", "0.7")]
     for lang in LANGS:
         prefix = "de/" if lang == "de" else ""
         write(prefix + "index.html", home_page(lang, apps, cats, presets, by_cat))
         write(prefix + "privacy/index.html", privacy_page(lang, cats, presets))
         write(prefix + "about/index.html", about_page(lang, apps, cats, presets))
+        write(prefix + "security/index.html", security_page(lang, cats, presets))
         for a in apps:
             write(f"{prefix}apps/{a['id']}/index.html", app_page(lang, a, apps, cats, presets, by_cat))
         for c in cats:
@@ -801,6 +943,12 @@ def build():
     }, indent=1))
     write("_headers", HEADERS)
     write("_redirects", "/de /de/ 301\n/index.html / 301\n/de/index.html /de/ 301\n")
+    key_files = ["engine.ps1", "winmate.ps1", "apps.json", ASSETS["js/app.js"], ASSETS["css/style.css"]]
+    write("build-info.json", json.dumps({
+        "name": "WinMate", "version": WINMATE_VERSION, "commit": COMMIT, "sourceDate": BUILD_DATE.isoformat(),
+        "engineSha256": engine_sha, "site": SITE_URL,
+        "files": {f: hashlib.sha256((DIST / f).read_bytes()).hexdigest() for f in key_files},
+    }, indent=1) + "\n")
     n_pages = sum(1 for _ in DIST.rglob("*.html"))
     print(f"Built {n_pages} pages, {len(apps)} apps, {len(cats)} categories -> {DIST}")
 
@@ -824,10 +972,12 @@ HEADERS = """/*
   Cache-Control: public, max-age=604800, stale-while-revalidate=86400
 /*.txt
   Content-Type: text/plain; charset=utf-8
+/*.ps1
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: no-cache
 """
 
 if __name__ == "__main__":
     import base64
-    theme_js = "try{var t=localStorage.getItem('wm-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}"
-    HEADERS = HEADERS.replace("THEME_HASH", base64.b64encode(hashlib.sha256(theme_js.encode()).digest()).decode())
+    HEADERS = HEADERS.replace("THEME_HASH", base64.b64encode(hashlib.sha256(BOOT_JS.encode()).digest()).decode())
     build()

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/baba537/WinMate/security/advisories/new
+    about: Please report security problems privately, not as a public issue.
+  - name: Security and verification guide
+    url: https://winmate.baba537.workers.dev/security/
+    about: How scripts work, the threat model and how to verify a script.

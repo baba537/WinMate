@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, check and reproduce
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build site
+        run: python build.py
+      - name: Check site
+        run: python tools/check_site.py
+      - name: Reproducible build (second build must be byte-identical)
+        run: |
+          mv dist dist-first
+          python build.py
+          diff -r dist-first dist
+          echo "Build is reproducible."
+      - name: Summary
+        run: |
+          {
+            echo "## WinMate build"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Version | $(python -c 'import json;print(json.load(open("dist/build-info.json"))["version"])') |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Engine SHA-256 | \`$(python -c 'import json;print(json.load(open("dist/build-info.json"))["engineSha256"])')\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist
+          retention-days: 14
+
+  powershell:
+    name: Engine and CLI tests (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build
+        run: python build.py
+      - name: Parse, export, verify and undo tests
+        run: python tools/test_script.py
